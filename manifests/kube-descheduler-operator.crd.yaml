@@ -116,6 +116,12 @@ spec:
                       The EvictionsInBackground alpha feature is a subject to change.
                       Currently provided as an experimental feature.
                     type: boolean
+                  devEnableSoftTainter:
+                    description: |-
+                      DevEnableSoftTainter enables SoftTainter alpha feature.
+                      The EvictionsInBackground alpha feature is a subject to change.
+                      Currently provided as an experimental feature.
+                    type: boolean
                   devHighNodeUtilizationThresholds:
                     description: |-
                       devHighNodeUtilizationThresholds enumerates thresholds for node utilization levels.
@@ -127,6 +133,12 @@ spec:
                     - Moderate
                     - ""
                     type: string
+                  devKubevirtSchedulable:
+                    description: |-
+                      DevKubevirtSchedulable process only nodes that are considered
+                      shedulable for KubeVirt.
+                      False by default.
+                    type: boolean
                   devLowNodeUtilizationThresholds:
                     description: LowNodeUtilizationThresholds enumerates predefined
                       experimental thresholds
@@ -134,6 +146,8 @@ spec:
                     - Low
                     - Medium
                     - High
+                    - DynamicNarrow
+                    - DynamicWide
                     - ""
                     type: string
                   namespaces:

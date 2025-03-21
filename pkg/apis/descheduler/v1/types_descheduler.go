@@ -72,8 +72,18 @@ type ProfileCustomizations struct {
 	Namespaces Namespaces `json:"namespaces"`
 
 	// LowNodeUtilizationThresholds enumerates predefined experimental thresholds
-	// +kubebuilder:validation:Enum=Low;Medium;High;""
+	// +kubebuilder:validation:Enum=Low;Medium;High;DynamicNarrow;DynamicWide;""
 	DevLowNodeUtilizationThresholds *LowNodeUtilizationThresholdsType `json:"devLowNodeUtilizationThresholds"`
+
+	// DevEnableSoftTainter enables SoftTainter alpha feature.
+	// The EvictionsInBackground alpha feature is a subject to change.
+	// Currently provided as an experimental feature.
+	DevEnableSoftTainter bool `json:"devEnableSoftTainter"`
+
+	// DevKubevirtSchedulable process only nodes that are considered
+	// shedulable for KubeVirt.
+	// False by default.
+	DevKubevirtSchedulable bool `json:"devKubevirtSchedulable"`
 
 	// DevEnableEvictionsInBackground enables descheduler's EvictionsInBackground alpha feature.
 	// The EvictionsInBackground alpha feature is a subject to change.
@@ -103,6 +113,12 @@ var (
 
 	// HighThreshold sets thresholds:targetThresholds in 40%/70% ratio
 	HighThreshold LowNodeUtilizationThresholdsType = "High"
+
+	// DynamicNarrowThreshold enables deviation thresholds with +-10% from the mean resource usage
+	DynamicNarrowThreshold LowNodeUtilizationThresholdsType = "DynamicNarrow"
+
+	// DynamicWideThreshold enables deviation thresholds with +-20% from the mean resource usage
+	DynamicWideThreshold LowNodeUtilizationThresholdsType = "DynamicWide"
 )
 
 type HighNodeUtilizationThresholdsType string
@@ -135,6 +151,8 @@ const (
 	PrometheusMemoryPSIPressureProfile ActualUtilizationProfile = "PrometheusMemoryPSIPressure"
 	// PrometheusIOPSIPressureProfile sets rate(node_pressure_io_waiting_seconds_total[1m]) query
 	PrometheusIOPSIPressureProfile ActualUtilizationProfile = "PrometheusIOPSIPressure"
+	// PrometheusNodeHappiness sets descheduler:nodehappiness:avg1m query
+	PrometheusNodeHappiness ActualUtilizationProfile = "PrometheusNodeHappiness"
 )
 
 // Namespaces overrides included and excluded namespaces while keeping

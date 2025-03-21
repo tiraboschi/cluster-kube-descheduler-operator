@@ -583,6 +583,7 @@ func TestManageConfigMap(t *testing.T) {
 			targetConfigReconciler := NewTargetConfigReconciler(
 				ctx,
 				"RELATED_IMAGE_OPERAND_IMAGE",
+				"RELATED_IMAGE_SOFTTAINTER_IMAGE",
 				operatorConfigClient.KubedeschedulersV1(),
 				operatorConfigInformers.Kubedeschedulers().V1().KubeDeschedulers(),
 				deschedulerClient,
@@ -784,7 +785,7 @@ func TestManageDeployment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _, err := tt.targetConfigReconciler.manageDeployment(tt.descheduler, nil)
+			got, _, err := tt.targetConfigReconciler.manageDeschedulerDeployment(tt.descheduler, nil)
 			if err != nil {
 				t.Fatalf("Unexpected error: %v\n", err)
 			}
