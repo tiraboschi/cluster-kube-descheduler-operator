@@ -110,9 +110,18 @@ spec:
                       LowNodeUtilization plugin can consume the metrics for now.
                       Currently provided as an experimental feature.
                     type: string
+                  devEnableDeviationThresholds:
+                    description: DevEnableDeviationThresholds enables dynamic thresholds.
+                    type: boolean
                   devEnableEvictionsInBackground:
                     description: |-
                       DevEnableEvictionsInBackground enables descheduler's EvictionsInBackground alpha feature.
+                      The EvictionsInBackground alpha feature is a subject to change.
+                      Currently provided as an experimental feature.
+                    type: boolean
+                  devEnableSoftTainter:
+                    description: |-
+                      DevEnableSoftTainter enables SoftTainter alpha feature.
                       The EvictionsInBackground alpha feature is a subject to change.
                       Currently provided as an experimental feature.
                     type: boolean
@@ -127,8 +136,14 @@ spec:
                     - Moderate
                     - ""
                     type: string
+                  devKubevirtSchedulable:
+                    description: |-
+                      DevKubevirtSchedulable process only nodes that are considered
+                      shedulable for KubeVirt.
+                      False by default.
+                    type: boolean
                   devLowNodeUtilizationThresholds:
-                    description: LowNodeUtilizationThresholds enumerates predefined
+                    description: DevLowNodeUtilizationThresholds enumerates predefined
                       experimental thresholds
                     enum:
                     - Low

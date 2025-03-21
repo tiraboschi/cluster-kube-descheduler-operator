@@ -15,6 +15,9 @@ type ProfileCustomizationsApplyConfiguration struct {
 	ThresholdPriorityClassName       *string                                          `json:"thresholdPriorityClassName,omitempty"`
 	Namespaces                       *NamespacesApplyConfiguration                    `json:"namespaces,omitempty"`
 	DevLowNodeUtilizationThresholds  *deschedulerv1.LowNodeUtilizationThresholdsType  `json:"devLowNodeUtilizationThresholds,omitempty"`
+	DevEnableDeviationThresholds     *bool                                            `json:"devEnableDeviationThresholds,omitempty"`
+	DevEnableSoftTainter             *bool                                            `json:"devEnableSoftTainter,omitempty"`
+	DevKubevirtSchedulable           *bool                                            `json:"devKubevirtSchedulable,omitempty"`
 	DevEnableEvictionsInBackground   *bool                                            `json:"devEnableEvictionsInBackground,omitempty"`
 	DevHighNodeUtilizationThresholds *deschedulerv1.HighNodeUtilizationThresholdsType `json:"devHighNodeUtilizationThresholds,omitempty"`
 	DevActualUtilizationProfile      *deschedulerv1.ActualUtilizationProfile          `json:"devActualUtilizationProfile,omitempty"`
@@ -63,6 +66,30 @@ func (b *ProfileCustomizationsApplyConfiguration) WithNamespaces(value *Namespac
 // If called multiple times, the DevLowNodeUtilizationThresholds field is set to the value of the last call.
 func (b *ProfileCustomizationsApplyConfiguration) WithDevLowNodeUtilizationThresholds(value deschedulerv1.LowNodeUtilizationThresholdsType) *ProfileCustomizationsApplyConfiguration {
 	b.DevLowNodeUtilizationThresholds = &value
+	return b
+}
+
+// WithDevEnableDeviationThresholds sets the DevEnableDeviationThresholds field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DevEnableDeviationThresholds field is set to the value of the last call.
+func (b *ProfileCustomizationsApplyConfiguration) WithDevEnableDeviationThresholds(value bool) *ProfileCustomizationsApplyConfiguration {
+	b.DevEnableDeviationThresholds = &value
+	return b
+}
+
+// WithDevEnableSoftTainter sets the DevEnableSoftTainter field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DevEnableSoftTainter field is set to the value of the last call.
+func (b *ProfileCustomizationsApplyConfiguration) WithDevEnableSoftTainter(value bool) *ProfileCustomizationsApplyConfiguration {
+	b.DevEnableSoftTainter = &value
+	return b
+}
+
+// WithDevKubevirtSchedulable sets the DevKubevirtSchedulable field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the DevKubevirtSchedulable field is set to the value of the last call.
+func (b *ProfileCustomizationsApplyConfiguration) WithDevKubevirtSchedulable(value bool) *ProfileCustomizationsApplyConfiguration {
+	b.DevKubevirtSchedulable = &value
 	return b
 }
 

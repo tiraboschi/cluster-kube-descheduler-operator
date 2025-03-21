@@ -71,9 +71,22 @@ type ProfileCustomizations struct {
 	// the default exclusion of all openshift-*, kube-system and hypershift namespaces
 	Namespaces Namespaces `json:"namespaces"`
 
-	// LowNodeUtilizationThresholds enumerates predefined experimental thresholds
+	// DevLowNodeUtilizationThresholds enumerates predefined experimental thresholds
 	// +kubebuilder:validation:Enum=Low;Medium;High;""
 	DevLowNodeUtilizationThresholds *LowNodeUtilizationThresholdsType `json:"devLowNodeUtilizationThresholds"`
+
+	// DevEnableDeviationThresholds enables dynamic thresholds.
+	DevEnableDeviationThresholds bool `json:"devEnableDeviationThresholds,omitempty"`
+
+	// DevEnableSoftTainter enables SoftTainter alpha feature.
+	// The EvictionsInBackground alpha feature is a subject to change.
+	// Currently provided as an experimental feature.
+	DevEnableSoftTainter bool `json:"devEnableSoftTainter"`
+
+	// DevKubevirtSchedulable process only nodes that are considered
+	// shedulable for KubeVirt.
+	// False by default.
+	DevKubevirtSchedulable bool `json:"devKubevirtSchedulable"`
 
 	// DevEnableEvictionsInBackground enables descheduler's EvictionsInBackground alpha feature.
 	// The EvictionsInBackground alpha feature is a subject to change.
@@ -95,13 +108,13 @@ type ProfileCustomizations struct {
 type LowNodeUtilizationThresholdsType string
 
 var (
-	// LowThreshold sets thresholds:targetThresholds in 10%/30% ratio
+	// LowThreshold sets thresholds:targetThresholds in 10%/30% ratio, average +-5% with DevEnableDeviationThresholds
 	LowThreshold LowNodeUtilizationThresholdsType = "Low"
 
-	// MediumThreshold sets thresholds:targetThresholds in 20%/50% ratio
+	// MediumThreshold sets thresholds:targetThresholds in 20%/50% ratio, average +-10% with DevEnableDeviationThresholds
 	MediumThreshold LowNodeUtilizationThresholdsType = "Medium"
 
-	// HighThreshold sets thresholds:targetThresholds in 40%/70% ratio
+	// HighThreshold sets thresholds:targetThresholds in 40%/70% ratio, average +-20% with DevEnableDeviationThresholds
 	HighThreshold LowNodeUtilizationThresholdsType = "High"
 )
 
@@ -135,6 +148,8 @@ const (
 	PrometheusMemoryPSIPressureProfile ActualUtilizationProfile = "PrometheusMemoryPSIPressure"
 	// PrometheusIOPSIPressureProfile sets rate(node_pressure_io_waiting_seconds_total[1m]) query
 	PrometheusIOPSIPressureProfile ActualUtilizationProfile = "PrometheusIOPSIPressure"
+	// PrometheusCPUCombinedProfile uses a combination of CPU utilization and CPU pressure based on a recording rule
+	PrometheusCPUCombinedProfile ActualUtilizationProfile = "PrometheusCPUCombined"
 )
 
 // Namespaces overrides included and excluded namespaces while keeping

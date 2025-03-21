@@ -3,6 +3,8 @@ package operator
 import (
 	"context"
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	utilpointer "k8s.io/utils/pointer"
 	"testing"
 	"time"
 	"unsafe"
@@ -235,6 +237,38 @@ func TestManageConfigMap(t *testing.T) {
 			want: &corev1.ConfigMap{
 				TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
 				Data:     map[string]string{"policy.yaml": string(bindata.MustAsset("assets/relieveAndMigrateMediumConfig.yaml"))},
+			},
+		},
+		{
+			name: "RelieveAndMigrateDeviationMedium",
+			descheduler: &deschedulerv1.KubeDescheduler{
+				Spec: deschedulerv1.KubeDeschedulerSpec{
+					Profiles: []deschedulerv1.DeschedulerProfile{"DevKubeVirtRelieveAndMigrate"},
+					ProfileCustomizations: &deschedulerv1.ProfileCustomizations{
+						DevLowNodeUtilizationThresholds: &deschedulerv1.MediumThreshold,
+						DevEnableDeviationThresholds:    true,
+						DevKubevirtSchedulable:          true,
+						DevActualUtilizationProfile:     deschedulerv1.PrometheusCPUCombinedProfile,
+					},
+				},
+			},
+			want: &corev1.ConfigMap{
+				TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "ConfigMap"},
+				Data:     map[string]string{"policy.yaml": string(bindata.MustAsset("assets/relieveAndMigrateDeviationMediumConfig.yaml"))},
+			},
+			routes: []runtime.Object{
+				&routev1.Route{
+					ObjectMeta: metav1.ObjectMeta{
+						Namespace: "openshift-monitoring",
+						Name:      "prometheus-k8s",
+					},
+					Status: routev1.RouteStatus{Ingress: []routev1.RouteIngress{
+						{
+							Host: "prometheus-k8s-openshift-monitoring.apps.example.com",
+						},
+					},
+					},
+				},
 			},
 		},
 		{
@@ -561,6 +595,12 @@ func TestManageConfigMap(t *testing.T) {
 						Name: "kube-system",
 					},
 				},
+				&corev1.Namespace{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:   operatorclient.OperatorNamespace,
+						Labels: map[string]string{operatorclient.OpenshiftClusterMonitoringLabelKey: operatorclient.OpenshiftClusterMonitoringLabelValue},
+					},
+				},
 			}
 
 			ctx, cancelFunc := context.WithCancel(context.TODO())
@@ -583,6 +623,7 @@ func TestManageConfigMap(t *testing.T) {
 			targetConfigReconciler := NewTargetConfigReconciler(
 				ctx,
 				"RELATED_IMAGE_OPERAND_IMAGE",
+				"RELATED_IMAGE_SOFTTAINTER_IMAGE",
 				operatorConfigClient.KubedeschedulersV1(),
 				operatorConfigInformers.Kubedeschedulers().V1().KubeDeschedulers(),
 				deschedulerClient,
@@ -657,8 +698,9 @@ func TestManageDeployment(t *testing.T) {
 						Spec: corev1.PodSpec{
 							Containers: []corev1.Container{
 								{
-									Name:  "openshift-descheduler",
-									Image: "",
+									Name:            "openshift-descheduler",
+									Image:           "",
+									ImagePullPolicy: corev1.PullAlways, // TODO: remove me
 									SecurityContext: &corev1.SecurityContext{
 										AllowPrivilegeEscalation: utilptr.To[bool](false),
 										ReadOnlyRootFilesystem:   utilptr.To[bool](true),
@@ -784,7 +826,7 @@ func TestManageDeployment(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, _, err := tt.targetConfigReconciler.manageDeployment(tt.descheduler, nil)
+			got, _, err := tt.targetConfigReconciler.manageDeschedulerDeployment(tt.descheduler, nil)
 			if err != nil {
 				t.Fatalf("Unexpected error: %v\n", err)
 			}
@@ -801,6 +843,161 @@ func TestManageDeployment(t *testing.T) {
 			} else {
 				if !apiequality.Semantic.DeepEqual(tt.want, got) {
 					t.Errorf("manageDeployment diff \n\n %+v", cmp.Diff(tt.want, got))
+				}
+			}
+		})
+	}
+}
+
+func TestManagesoftTainterDeployment(t *testing.T) {
+	fakeRecorder := NewFakeRecorder(1024)
+	tests := []struct {
+		name                   string
+		targetConfigReconciler *TargetConfigReconciler
+		want                   *appsv1.Deployment
+		descheduler            *deschedulerv1.KubeDescheduler
+		checkContainerOnly     bool
+		checkContainerArgsOnly bool
+	}{
+		{
+			name: "RelieveAndMigrate",
+			targetConfigReconciler: &TargetConfigReconciler{
+				ctx:           context.TODO(),
+				kubeClient:    fake.NewSimpleClientset(),
+				eventRecorder: fakeRecorder,
+				configSchedulerLister: &fakeSchedConfigLister{
+					Items: map[string]*configv1.Scheduler{"cluster": configLowNodeUtilization},
+				},
+			},
+			descheduler: &deschedulerv1.KubeDescheduler{
+				Spec: deschedulerv1.KubeDeschedulerSpec{
+					Profiles: []deschedulerv1.DeschedulerProfile{deschedulerv1.RelieveAndMigrate},
+					ProfileCustomizations: &deschedulerv1.ProfileCustomizations{
+						DevLowNodeUtilizationThresholds: &deschedulerv1.MediumThreshold,
+						DevEnableDeviationThresholds:    true,
+						DevKubevirtSchedulable:          true,
+						DevActualUtilizationProfile:     deschedulerv1.PrometheusCPUCombinedProfile,
+					},
+					DeschedulingIntervalSeconds: utilptr.To[int32](10),
+				},
+			},
+			checkContainerOnly:     false,
+			checkContainerArgsOnly: false,
+			want: &appsv1.Deployment{
+				TypeMeta: metav1.TypeMeta{APIVersion: "apps/v1", Kind: "Deployment"},
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "softtainter",
+					Annotations:     map[string]string{"operator.openshift.io/spec-hash": "7f90430d071d49939e9dffc968b99d7c9be15f54f806d186c4f888edf7a4e1bc"},
+					Labels:          map[string]string{"app": "softtainer"},
+					OwnerReferences: []metav1.OwnerReference{{APIVersion: "operator.openshift.io/v1", Kind: "KubeDescheduler"}},
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: utilpointer.Int32(1),
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app": "softtainer",
+						},
+					},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels:      map[string]string{"app": "softtainer"},
+							Annotations: map[string]string{"kubectl.kubernetes.io/default-container": "openshift-softtainer"},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Name:    "openshift-softtainer",
+									Command: []string{"/usr/bin/soft-tainter"},
+									Args: []string{
+										"--policy-config-file=/policy-dir/policy.yaml",
+										"--logging-format=text",
+										"--tls-cert-file=/certs-dir/tls.crt",
+										"--tls-private-key-file=/certs-dir/tls.key",
+										"--descheduling-interval=10s",
+										"--feature-gates=EvictionsInBackground=true",
+										"-v=2",
+									},
+									ImagePullPolicy: corev1.PullAlways, // TODO: remove me
+									LivenessProbe: &corev1.Probe{
+										ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/livez", Port: intstr.FromInt32(6060), Scheme: corev1.URISchemeHTTP}},
+										InitialDelaySeconds: 30,
+										PeriodSeconds:       5,
+										FailureThreshold:    1,
+									},
+									ReadinessProbe: &corev1.Probe{
+										ProbeHandler:        corev1.ProbeHandler{HTTPGet: &corev1.HTTPGetAction{Path: "/readyz", Port: intstr.FromInt32(6060), Scheme: corev1.URISchemeHTTP}},
+										InitialDelaySeconds: 5,
+										PeriodSeconds:       5,
+										FailureThreshold:    1,
+									},
+									Resources: corev1.ResourceRequirements{
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("100m"),
+											corev1.ResourceMemory: resource.MustParse("500Mi"),
+										},
+									},
+									SecurityContext: &corev1.SecurityContext{
+										AllowPrivilegeEscalation: utilpointer.Bool(false),
+										Capabilities:             &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+										ReadOnlyRootFilesystem:   utilpointer.Bool(true),
+									},
+									VolumeMounts: []corev1.VolumeMount{
+										corev1.VolumeMount{
+											Name:      "policy-volume",
+											MountPath: "/policy-dir",
+										},
+										corev1.VolumeMount{
+											Name:      "certs-dir",
+											MountPath: "/certs-dir",
+										},
+									},
+								},
+							},
+							PriorityClassName: "system-cluster-critical",
+							RestartPolicy:     corev1.RestartPolicyAlways,
+							SecurityContext: &corev1.PodSecurityContext{
+								RunAsNonRoot: utilpointer.Bool(true),
+								SeccompProfile: &corev1.SeccompProfile{
+									Type: corev1.SeccompProfileTypeRuntimeDefault,
+								},
+							},
+							ServiceAccountName: "openshift-descheduler-softtainter",
+							Volumes: []corev1.Volume{
+								corev1.Volume{
+									Name:         "policy-volume",
+									VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{LocalObjectReference: corev1.LocalObjectReference{}}},
+								},
+								corev1.Volume{
+									Name:         "certs-dir",
+									VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: "kube-descheduler-serving-cert"}},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, _, err := tt.targetConfigReconciler.manageSoftTainterDeployment(tt.descheduler, nil)
+			if err != nil {
+				t.Fatalf("Unexpected error: %v\n", err)
+			}
+			if tt.checkContainerOnly {
+				if tt.checkContainerArgsOnly {
+					if !apiequality.Semantic.DeepEqual(tt.want.Spec.Template.Spec.Containers[0].Args, got.Spec.Template.Spec.Containers[0].Args) {
+						t.Errorf("manageSoftTainterDeployment diff \n\n %+v", cmp.Diff(tt.want.Spec.Template.Spec.Containers[0].Args, got.Spec.Template.Spec.Containers[0].Args))
+					}
+				} else {
+					if !apiequality.Semantic.DeepEqual(tt.want.Spec.Template.Spec.Containers[0], got.Spec.Template.Spec.Containers[0]) {
+						t.Errorf("manageSoftTainterDeployment diff \n\n %+v", cmp.Diff(tt.want.Spec.Template.Spec.Containers[0], got.Spec.Template.Spec.Containers[0]))
+					}
+				}
+			} else {
+				if !apiequality.Semantic.DeepEqual(tt.want, got) {
+					t.Errorf("manageSoftTainterDeployment diff \n\n %+v", cmp.Diff(tt.want, got))
 				}
 			}
 		})
