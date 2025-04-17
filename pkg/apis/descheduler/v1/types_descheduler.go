@@ -52,6 +52,22 @@ type EvictionLimits struct {
 	Total *int32 `json:"total,omitempty"`
 }
 
+// SoftTainterComponent describes the status of the SoftTainter component
+// in the KubeVirtRelieveAndMigrate profile.
+// If none of the following policies is specified, the default one
+// is Enabled.
+// +kubebuilder:validation:Enum=Enabled;Disabled
+type SoftTainterComponent string
+
+var (
+	// SoftTainterEnabled enables the SoftTainter component that will apply/remove
+	// soft taints according to node classification as a hint for the scheduler.
+	SoftTainterEnabled SoftTainterComponent = "Enabled"
+
+	// SoftTainterDisabled disables the SoftTainter component
+	SoftTainterDisabled SoftTainterComponent = "Disabled"
+)
+
 // ProfileCustomizations contains various parameters for modifying the default behavior of certain profiles
 type ProfileCustomizations struct {
 	// PodLifetime is the length of time after which pods should be evicted
@@ -78,7 +94,17 @@ type ProfileCustomizations struct {
 	// DevEnableSoftTainter enables SoftTainter alpha feature.
 	// The EnableSoftTainter alpha feature is a subject to change.
 	// Currently provided as an experimental feature.
+	// +kubebuilder:deprecatedversion:warning="devEnableSoftTainter field is deprecated, please use KubevirtRelieveAndMigrateSoftTainter"
+	// Deprecated: DevEnableSoftTainter field is deprecated, please use KubevirtRelieveAndMigrateSoftTainter.
 	DevEnableSoftTainter bool `json:"devEnableSoftTainter"`
+
+	// Specifies if the SoftTainter component should be enabled for the KubevirtRelieveAndMigrate profile.
+	// Relevant only for the KubevirtRelieveAndMigrate profile, otherwise ignored.
+	// Valid values are:
+	// - "Enabled" (default): enables the SoftTainter component that will apply/remove soft taints according to node classification as a hint for the scheduler
+	// - "Disabled": disables the SoftTainter component
+	// +optional
+	KubevirtRelieveAndMigrateSoftTainter SoftTainterComponent `json:"kubevirtRelieveAndMigrateSoftTainter,omitempty"`
 
 	// DevEnableEvictionsInBackground enables descheduler's EvictionsInBackground alpha feature.
 	// The EvictionsInBackground alpha feature is a subject to change.

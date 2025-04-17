@@ -1254,7 +1254,7 @@ func (c *TargetConfigReconciler) manageConfigMap(descheduler *deschedulerv1.Kube
 		}
 	}
 
-	if descheduler.Spec.ProfileCustomizations != nil && descheduler.Spec.ProfileCustomizations.DevEnableSoftTainter {
+	if descheduler.Spec.ProfileCustomizations != nil && descheduler.Spec.ProfileCustomizations.KubevirtRelieveAndMigrateSoftTainter == deschedulerv1.SoftTainterEnabled {
 		if !slices.Contains(descheduler.Spec.Profiles, deschedulerv1.RelieveAndMigrate) {
 			return nil, true, fmt.Errorf("the softtainter can only be used with the %v profile", deschedulerv1.RelieveAndMigrate)
 		}
@@ -1595,9 +1595,17 @@ func (c *TargetConfigReconciler) isKubeVirtDeployed() (bool, error) {
 }
 
 func (c *TargetConfigReconciler) isSoftTainterNeeded(descheduler *deschedulerv1.KubeDescheduler) (bool, error) {
-	if descheduler.Spec.ProfileCustomizations != nil && descheduler.Spec.ProfileCustomizations.DevEnableSoftTainter {
+	enabled := false
+	if slices.Contains(descheduler.Spec.Profiles, deschedulerv1.RelieveAndMigrate) {
+		enabled = true
+		if descheduler.Spec.ProfileCustomizations != nil && descheduler.Spec.ProfileCustomizations.KubevirtRelieveAndMigrateSoftTainter == deschedulerv1.SoftTainterDisabled {
+			enabled = false
+		}
+	}
+	if enabled {
 		return true, nil
 	}
+
 	ls, err := labels.Parse(kubeVirtShedulableLabelSelector)
 	if err != nil {
 		return false, err

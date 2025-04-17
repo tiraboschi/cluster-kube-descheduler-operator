@@ -133,6 +133,7 @@ spec:
                       DevEnableSoftTainter enables SoftTainter alpha feature.
                       The EnableSoftTainter alpha feature is a subject to change.
                       Currently provided as an experimental feature.
+                      Deprecated: DevEnableSoftTainter field is deprecated, please use KubevirtRelieveAndMigrateSoftTainter.
                     type: boolean
                   devHighNodeUtilizationThresholds:
                     description: |-
@@ -153,6 +154,17 @@ spec:
                     - Medium
                     - High
                     - ""
+                    type: string
+                  kubevirtRelieveAndMigrateSoftTainter:
+                    description: |-
+                      Specifies if the SoftTainter component should be enabled for the KubevirtRelieveAndMigrate profile.
+                      Relevant only for the KubevirtRelieveAndMigrate profile, otherwise ignored.
+                      Valid values are:
+                      - "Enabled" (default): enables the SoftTainter component that will apply/remove soft taints according to node classification as a hint for the scheduler
+                      - "Disabled": disables the SoftTainter component
+                    enum:
+                    - Enabled
+                    - Disabled
                     type: string
                   namespaces:
                     description: |-

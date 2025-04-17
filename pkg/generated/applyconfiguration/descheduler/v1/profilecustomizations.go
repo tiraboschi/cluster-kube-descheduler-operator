@@ -10,16 +10,17 @@ import (
 // ProfileCustomizationsApplyConfiguration represents a declarative configuration of the ProfileCustomizations type for use
 // with apply.
 type ProfileCustomizationsApplyConfiguration struct {
-	PodLifetime                      *metav1.Duration                                 `json:"podLifetime,omitempty"`
-	ThresholdPriority                *int32                                           `json:"thresholdPriority,omitempty"`
-	ThresholdPriorityClassName       *string                                          `json:"thresholdPriorityClassName,omitempty"`
-	Namespaces                       *NamespacesApplyConfiguration                    `json:"namespaces,omitempty"`
-	DevLowNodeUtilizationThresholds  *deschedulerv1.LowNodeUtilizationThresholdsType  `json:"devLowNodeUtilizationThresholds,omitempty"`
-	DevEnableSoftTainter             *bool                                            `json:"devEnableSoftTainter,omitempty"`
-	DevEnableEvictionsInBackground   *bool                                            `json:"devEnableEvictionsInBackground,omitempty"`
-	DevHighNodeUtilizationThresholds *deschedulerv1.HighNodeUtilizationThresholdsType `json:"devHighNodeUtilizationThresholds,omitempty"`
-	DevActualUtilizationProfile      *deschedulerv1.ActualUtilizationProfile          `json:"devActualUtilizationProfile,omitempty"`
-	DevDeviationThresholds           *deschedulerv1.DeviationThresholdsType           `json:"devDeviationThresholds,omitempty"`
+	PodLifetime                          *metav1.Duration                                 `json:"podLifetime,omitempty"`
+	ThresholdPriority                    *int32                                           `json:"thresholdPriority,omitempty"`
+	ThresholdPriorityClassName           *string                                          `json:"thresholdPriorityClassName,omitempty"`
+	Namespaces                           *NamespacesApplyConfiguration                    `json:"namespaces,omitempty"`
+	DevLowNodeUtilizationThresholds      *deschedulerv1.LowNodeUtilizationThresholdsType  `json:"devLowNodeUtilizationThresholds,omitempty"`
+	DevEnableSoftTainter                 *bool                                            `json:"devEnableSoftTainter,omitempty"`
+	KubevirtRelieveAndMigrateSoftTainter *deschedulerv1.SoftTainterComponent              `json:"kubevirtRelieveAndMigrateSoftTainter,omitempty"`
+	DevEnableEvictionsInBackground       *bool                                            `json:"devEnableEvictionsInBackground,omitempty"`
+	DevHighNodeUtilizationThresholds     *deschedulerv1.HighNodeUtilizationThresholdsType `json:"devHighNodeUtilizationThresholds,omitempty"`
+	DevActualUtilizationProfile          *deschedulerv1.ActualUtilizationProfile          `json:"devActualUtilizationProfile,omitempty"`
+	DevDeviationThresholds               *deschedulerv1.DeviationThresholdsType           `json:"devDeviationThresholds,omitempty"`
 }
 
 // ProfileCustomizationsApplyConfiguration constructs a declarative configuration of the ProfileCustomizations type for use with
@@ -73,6 +74,14 @@ func (b *ProfileCustomizationsApplyConfiguration) WithDevLowNodeUtilizationThres
 // If called multiple times, the DevEnableSoftTainter field is set to the value of the last call.
 func (b *ProfileCustomizationsApplyConfiguration) WithDevEnableSoftTainter(value bool) *ProfileCustomizationsApplyConfiguration {
 	b.DevEnableSoftTainter = &value
+	return b
+}
+
+// WithKubevirtRelieveAndMigrateSoftTainter sets the KubevirtRelieveAndMigrateSoftTainter field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the KubevirtRelieveAndMigrateSoftTainter field is set to the value of the last call.
+func (b *ProfileCustomizationsApplyConfiguration) WithKubevirtRelieveAndMigrateSoftTainter(value deschedulerv1.SoftTainterComponent) *ProfileCustomizationsApplyConfiguration {
+	b.KubevirtRelieveAndMigrateSoftTainter = &value
 	return b
 }
 
