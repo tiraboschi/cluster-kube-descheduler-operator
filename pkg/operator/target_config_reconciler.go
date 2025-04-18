@@ -992,7 +992,44 @@ func lifecycleAndUtilizationProfile(profileCustomizations *deschedulerv1.Profile
 	return profile, nil
 }
 
+// defaultProfileCustomizationsForRelieveAndMigrate sets default values for the
+// profile customizations used in the RelieveAndMigrate profile. It ensures
+// that the following fields are set (if these fields are not already set by
+// the user):
+//   - DevDeviationThresholds: set to AsymmetricLowDeviationThreshold.
+//   - DevActualUtilizationProfile: set to PrometheusCPUCombinedProfile.
+//   - KubevirtRelieveAndMigrateSoftTainter: set to SoftTainterEnabled.
+func defaultProfileCustomizationsForRelieveAndMigrate(custom *deschedulerv1.ProfileCustomizations) *deschedulerv1.ProfileCustomizations {
+	// let's not modify the original object.
+	custom = custom.DeepCopy()
+	if custom == nil {
+		custom = &deschedulerv1.ProfileCustomizations{}
+	}
+
+	// if user hasn't provided the deviation thresholds should be "AsymmetricLow".
+	if custom.DevDeviationThresholds == nil {
+		klog.InfoS("Setting default DevDeviationThresholds", "value", deschedulerv1.AsymmetricLowDeviationThreshold)
+		custom.DevDeviationThresholds = utilptr.To(deschedulerv1.AsymmetricLowDeviationThreshold)
+	}
+
+	// if user hasn't provided the actual utilization profile should be "PrometheusCPUCombinedProfile".
+	if custom.DevActualUtilizationProfile == "" {
+		klog.InfoS("Setting default DevActualUtilizationProfile", "value", deschedulerv1.PrometheusCPUCombinedProfile)
+		custom.DevActualUtilizationProfile = deschedulerv1.PrometheusCPUCombinedProfile
+	}
+
+	// if user hasn't provided the soft tainter should be "Enabled".
+	if custom.KubevirtRelieveAndMigrateSoftTainter == "" {
+		klog.InfoS("Setting default KubevirtRelieveAndMigrateSoftTainter", "value", deschedulerv1.SoftTainterEnabled)
+		custom.KubevirtRelieveAndMigrateSoftTainter = deschedulerv1.SoftTainterEnabled
+	}
+
+	return custom
+}
+
 func relieveAndMigrateProfile(profileCustomizations *deschedulerv1.ProfileCustomizations, includedNamespaces, excludedNamespaces, protectedNamespaces []string) (*v1alpha2.DeschedulerProfile, error) {
+	profileCustomizations = defaultProfileCustomizationsForRelieveAndMigrate(profileCustomizations)
+
 	profile := &v1alpha2.DeschedulerProfile{
 		Name: string(deschedulerv1.RelieveAndMigrate),
 		PluginConfigs: []v1alpha2.PluginConfig{
