@@ -71,19 +71,16 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	if os.Getenv("RELEASE_IMAGE_LATEST") == "" {
-		klog.Errorf("RELEASE_IMAGE_LATEST environment variable not set")
-		os.Exit(1)
-	}
+	if os.Getenv("OPERATOR_IMAGE") == "" && os.Getenv("OPERAND_IMAGE") == "" {
+		if os.Getenv("RELEASE_IMAGE_LATEST") == "" {
+			klog.Errorf("RELEASE_IMAGE_LATEST environment variable not set")
+			os.Exit(1)
+		}
 
-	if os.Getenv("NAMESPACE") == "" {
-		klog.Errorf("NAMESPACE environment variable not set")
-		os.Exit(1)
-	}
-
-	operator_image := "pipeline:cluster-kube-descheduler-operator"
-	if os.Getenv("OPERATOR_IMAGE") != "" {
-		operator_image = os.Getenv("OPERATOR_IMAGE")
+		if os.Getenv("NAMESPACE") == "" {
+			klog.Errorf("NAMESPACE environment variable not set")
+			os.Exit(1)
+		}
 	}
 
 	kubeClient := GetKubeClient()
@@ -140,16 +137,29 @@ func TestMain(m *testing.M) {
 				required := resourceread.ReadDeploymentV1OrDie(objBytes)
 				// override the operator image with the one built in the CI
 
-				// E.g. RELEASE_IMAGE_LATEST=registry.build03.ci.openshift.org/ci-op-52fj47p4/stable:${component}
-				registry := strings.Split(os.Getenv("RELEASE_IMAGE_LATEST"), "/")[0]
+				var operator_image, operand_image string
 
-				required.Spec.Template.Spec.Containers[0].Image = registry + "/" + os.Getenv("NAMESPACE") + "/" + operator_image
+				if os.Getenv("OPERATOR_IMAGE") != "" {
+					operator_image = os.Getenv("OPERATOR_IMAGE")
+				} else {
+					// E.g. RELEASE_IMAGE_LATEST=registry.build03.ci.openshift.org/ci-op-52fj47p4/stable:${component}
+					registry := strings.Split(os.Getenv("RELEASE_IMAGE_LATEST"), "/")[0]
+					operator_image = registry + "/" + os.Getenv("NAMESPACE") + "/" + "pipeline:cluster-kube-descheduler-operator"
+				}
+
+				if os.Getenv("OPERAND_IMAGE") != "" {
+					operand_image = os.Getenv("OPERAND_IMAGE")
+				} else {
+					operand_image = "quay.io/jchaloup/descheduler:v5.3.2-0"
+				}
+
+				required.Spec.Template.Spec.Containers[0].Image = operator_image
 				// OPERAND_IMAGE env
 				for i, env := range required.Spec.Template.Spec.Containers[0].Env {
 					if env.Name == "RELATED_IMAGE_OPERAND_IMAGE" {
-						required.Spec.Template.Spec.Containers[0].Env[i].Value = "quay.io/jchaloup/descheduler:v5.3.2-0"
+						required.Spec.Template.Spec.Containers[0].Env[i].Value = operand_image
 					} else if env.Name == "RELATED_IMAGE_SOFTTAINTER_IMAGE" {
-						required.Spec.Template.Spec.Containers[0].Env[i].Value = registry + "/" + os.Getenv("NAMESPACE") + "/" + operator_image
+						required.Spec.Template.Spec.Containers[0].Env[i].Value = operator_image
 					}
 				}
 				_, _, err := resourceapply.ApplyDeployment(
