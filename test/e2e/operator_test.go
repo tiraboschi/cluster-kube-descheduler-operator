@@ -9,14 +9,15 @@ import (
 	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	descv1 "github.com/openshift/cluster-kube-descheduler-operator/pkg/apis/descheduler/v1"
-	deschclient "github.com/openshift/cluster-kube-descheduler-operator/pkg/generated/clientset/versioned"
 	ssscheme "github.com/openshift/cluster-kube-descheduler-operator/pkg/generated/clientset/versioned/scheme"
 	"github.com/openshift/cluster-kube-descheduler-operator/pkg/softtainter"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
-	apiextclientv1 "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -62,6 +63,9 @@ var operatorConfigsAppliers = map[string]func() error{}
 const EXPERIMENTAL_DISABLE_PSI_CHECK = "EXPERIMENTAL_DISABLE_PSI_CHECK"
 
 func TestMain(m *testing.M) {
+	// Register Gomega fail handler for Ginkgo
+	RegisterFailHandler(Fail)
+
 	if os.Getenv("KUBECONFIG") == "" {
 		klog.Errorf("KUBECONFIG environment variable not set")
 		os.Exit(1)
@@ -82,9 +86,9 @@ func TestMain(m *testing.M) {
 		operator_image = os.Getenv("OPERATOR_IMAGE")
 	}
 
-	kubeClient := getKubeClientOrDie()
-	apiExtClient := getApiExtensionKubeClient()
-	deschClient := getDeschedulerClient()
+	kubeClient := GetKubeClient()
+	apiExtClient := GetApiExtensionClient()
+	deschClient := GetDeschedulerClient()
 
 	eventRecorder := events.NewKubeRecorder(kubeClient.CoreV1().Events("default"), "test-e2e", &corev1.ObjectReference{}, clock.RealClock{})
 
@@ -246,7 +250,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestSoftTainterDeployment(t *testing.T) {
-	kubeClient := getKubeClientOrDie()
+	kubeClient := GetKubeClient()
 	ctx, cancelFnc := context.WithCancel(context.TODO())
 	defer cancelFnc()
 
@@ -363,7 +367,7 @@ func TestSoftTainterDeployment(t *testing.T) {
 }
 
 func TestSoftTainterVAP(t *testing.T) {
-	kubeClient := getKubeClientOrDie()
+	kubeClient := GetKubeClient()
 	ctx, cancelFnc := context.WithCancel(context.TODO())
 	defer cancelFnc()
 
@@ -479,7 +483,7 @@ func TestSoftTainterVAP(t *testing.T) {
 }
 
 func TestDescheduling(t *testing.T) {
-	kubeClient := getKubeClientOrDie()
+	kubeClient := GetKubeClient()
 	ctx := context.Background()
 	testNamespace := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "e2e-" + strings.ToLower(t.Name())}}
 	if _, err := kubeClient.CoreV1().Namespaces().Create(ctx, testNamespace, metav1.CreateOptions{}); err != nil {
@@ -561,51 +565,6 @@ func TestDescheduling(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("error while waiting for pod: %v", err)
 	}
-}
-
-func getKubeClientOrDie() *k8sclient.Clientset {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		klog.Errorf("Unable to build config: %v", err)
-		os.Exit(1)
-	}
-	client, err := k8sclient.NewForConfig(config)
-	if err != nil {
-		klog.Errorf("Unable to build client: %v", err)
-		os.Exit(1)
-	}
-	return client
-}
-
-func getApiExtensionKubeClient() *apiextclientv1.Clientset {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		klog.Errorf("Unable to build config: %v", err)
-		os.Exit(1)
-	}
-	client, err := apiextclientv1.NewForConfig(config)
-	if err != nil {
-		klog.Errorf("Unable to build client: %v", err)
-		os.Exit(1)
-	}
-	return client
-}
-
-func getDeschedulerClient() *deschclient.Clientset {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		klog.Errorf("Unable to build config: %v", err)
-		os.Exit(1)
-	}
-	client, err := deschclient.NewForConfig(config)
-	if err != nil {
-		klog.Errorf("Unable to build client: %v", err)
-		os.Exit(1)
-	}
-	return client
 }
 
 func getPodNames(pods []v1.Pod) []string {
