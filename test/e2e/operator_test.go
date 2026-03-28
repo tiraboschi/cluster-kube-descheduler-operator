@@ -13,6 +13,7 @@ import (
 	o "github.com/onsi/gomega"
 
 	descv1 "github.com/openshift/cluster-kube-descheduler-operator/pkg/apis/descheduler/v1"
+	deschclient "github.com/openshift/cluster-kube-descheduler-operator/pkg/generated/clientset/versioned"
 	ssscheme "github.com/openshift/cluster-kube-descheduler-operator/pkg/generated/clientset/versioned/scheme"
 	"github.com/openshift/cluster-kube-descheduler-operator/pkg/softtainter"
 	appsv1 "k8s.io/api/apps/v1"
@@ -53,13 +54,48 @@ const (
 	softTainterValidatingAdmissionPolicyBindingName    = "openshift-descheduler-softtainter-vap-binding"
 )
 
-var operatorConfigs = map[string]string{
-	baseConf:                      "assets/07_descheduler-operator.cr.yaml",
-	kubeVirtRelieveAndMigrateConf: "assets/07_descheduler-operator.cr.devKubeVirtRelieveAndMigrate.yaml",
+var operatorConfigsAppliers = map[string]func(context.Context, *deschclient.Clientset) error{
+	baseConf:                      operatorConfigsApplier("assets/07_descheduler-operator.cr.yaml"),
+	kubeVirtRelieveAndMigrateConf: operatorConfigsApplier("assets/07_descheduler-operator.cr.devKubeVirtRelieveAndMigrate.yaml"),
 }
-var operatorConfigsAppliers = map[string]func() error{}
 
 const EXPERIMENTAL_DISABLE_PSI_CHECK = "EXPERIMENTAL_DISABLE_PSI_CHECK"
+
+func operatorConfigsApplier(path string) func(context.Context, *deschclient.Clientset) error {
+	return func(ctx context.Context, deschClient *deschclient.Clientset) error {
+		requiredObj, err := runtime.Decode(ssscheme.Codecs.UniversalDecoder(descv1.SchemeGroupVersion), bindata.MustAsset(path))
+		if err != nil {
+			klog.Errorf("Unable to decode %v: %v", path, err)
+			return err
+		}
+		requiredDesch := requiredObj.(*descv1.KubeDescheduler)
+		existingDesch, err := deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Get(ctx, requiredDesch.Name, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Create(ctx, requiredDesch, metav1.CreateOptions{})
+				return err
+			} else {
+				return err
+			}
+		}
+		requiredDesch.Spec.DeepCopyInto(&existingDesch.Spec)
+		existingDesch.ObjectMeta.Annotations = requiredDesch.ObjectMeta.Annotations
+		existingDesch.ObjectMeta.Labels = requiredDesch.ObjectMeta.Labels
+		_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Update(ctx, existingDesch, metav1.UpdateOptions{})
+		// retry once on conflicts
+		if apierrors.IsConflict(err) {
+			existingDesch, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Get(ctx, requiredDesch.Name, metav1.GetOptions{})
+			if err != nil {
+				return err
+			}
+			requiredDesch.Spec.DeepCopyInto(&existingDesch.Spec)
+			existingDesch.ObjectMeta.Annotations = requiredDesch.ObjectMeta.Annotations
+			existingDesch.ObjectMeta.Labels = requiredDesch.ObjectMeta.Labels
+			_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Update(ctx, existingDesch, metav1.UpdateOptions{})
+		}
+		return err
+	}
+}
 
 func TestMain(m *testing.M) {
 	// Register Gomega fail handler for Ginkgo
@@ -180,42 +216,6 @@ func TestMain(m *testing.M) {
 		},
 	}
 
-	for k, path := range operatorConfigs {
-		operatorConfigsAppliers[k] = func() error {
-			requiredObj, err := runtime.Decode(ssscheme.Codecs.UniversalDecoder(descv1.SchemeGroupVersion), bindata.MustAsset(path))
-			if err != nil {
-				klog.Errorf("Unable to decode %v: %v", path, err)
-				return err
-			}
-			requiredDesch := requiredObj.(*descv1.KubeDescheduler)
-			existingDesch, err := deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Get(ctx, requiredDesch.Name, metav1.GetOptions{})
-			if err != nil {
-				if apierrors.IsNotFound(err) {
-					_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Create(ctx, requiredDesch, metav1.CreateOptions{})
-					return err
-				} else {
-					return err
-				}
-			}
-			requiredDesch.Spec.DeepCopyInto(&existingDesch.Spec)
-			existingDesch.ObjectMeta.Annotations = requiredDesch.ObjectMeta.Annotations
-			existingDesch.ObjectMeta.Labels = requiredDesch.ObjectMeta.Labels
-			_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Update(ctx, existingDesch, metav1.UpdateOptions{})
-			// retry once on conflicts
-			if apierrors.IsConflict(err) {
-				existingDesch, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Get(ctx, requiredDesch.Name, metav1.GetOptions{})
-				if err != nil {
-					return err
-				}
-				requiredDesch.Spec.DeepCopyInto(&existingDesch.Spec)
-				existingDesch.ObjectMeta.Annotations = requiredDesch.ObjectMeta.Annotations
-				existingDesch.ObjectMeta.Labels = requiredDesch.ObjectMeta.Labels
-				_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Update(ctx, existingDesch, metav1.UpdateOptions{})
-			}
-			return err
-		}
-	}
-
 	// create required resources, e.g. namespace, crd, roles
 	o.Eventually(func() bool {
 		for _, asset := range assets {
@@ -229,7 +229,7 @@ func TestMain(m *testing.M) {
 	}).WithTimeout(10*time.Second).WithPolling(1*time.Second).Should(o.BeTrue(), "Unable to create Descheduler operator resources")
 
 	// apply base CR for the operator
-	err := operatorConfigsAppliers[baseConf]()
+	err := operatorConfigsAppliers[baseConf](ctx, deschClient)
 	if err != nil {
 		klog.Errorf("Unable to apply a CR for Descheduler operator: %v", err)
 		os.Exit(1)
@@ -256,6 +256,7 @@ func TestMain(m *testing.M) {
 
 func TestSoftTainterDeployment(t *testing.T) {
 	kubeClient := GetKubeClient()
+	deschClient := GetDeschedulerClient()
 	ctx, cancelFnc := context.WithCancel(context.TODO())
 	defer cancelFnc()
 
@@ -295,12 +296,12 @@ func TestSoftTainterDeployment(t *testing.T) {
 	klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
 
 	// apply devKubeVirtRelieveAndMigrate CR for the operator
-	if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](); err != nil {
+	if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
 		t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
 	}
 	klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
 	defer func() {
-		if err := operatorConfigsAppliers[baseConf](); err != nil {
+		if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
 			t.Fatalf("Failed restoring base profile: %v", err)
 		}
 	}()
@@ -337,7 +338,7 @@ func TestSoftTainterDeployment(t *testing.T) {
 	}(ctx, kubeClient)
 
 	// revert to base confing for the operator
-	err = operatorConfigsAppliers["base"]()
+	err = operatorConfigsAppliers["base"](ctx, deschClient)
 	if err != nil {
 		t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
 	}
@@ -373,6 +374,7 @@ func TestSoftTainterDeployment(t *testing.T) {
 
 func TestSoftTainterVAP(t *testing.T) {
 	kubeClient := GetKubeClient()
+	deschClient := GetDeschedulerClient()
 	ctx, cancelFnc := context.WithCancel(context.TODO())
 	defer cancelFnc()
 
@@ -406,12 +408,12 @@ func TestSoftTainterVAP(t *testing.T) {
 	klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
 
 	// apply devKubeVirtRelieveAndMigrate CR for the operator
-	if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](); err != nil {
+	if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
 		t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
 	}
 	klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
 	defer func() {
-		if err := operatorConfigsAppliers[baseConf](); err != nil {
+		if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
 			t.Fatalf("Failed restoring base profile: %v", err)
 		}
 	}()
