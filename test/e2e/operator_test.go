@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
 	o "github.com/onsi/gomega"
 
 	descv1 "github.com/openshift/cluster-kube-descheduler-operator/pkg/apis/descheduler/v1"
@@ -93,25 +92,21 @@ func operatorConfigsApplier(path string) func(context.Context, *deschclient.Clie
 	}
 }
 
-func TestMain(m *testing.M) {
-	// Register Gomega fail handler for Ginkgo
-	o.RegisterFailHandler(Fail)
+// TestExtended runs the operator tests using standard Go testing.
+func TestExtended(t *testing.T) {
+	// Register Gomega with the testing framework for standard Go test mode
+	o.RegisterTestingT(t)
 
-	_, cancelFnc, _, err := setupOperator()
-	if err != nil {
-		klog.Errorf("Failed to setup operator: %v", err)
-		os.Exit(1)
-	}
-	defer cancelFnc()
+	t.Run("Descheduler Operator", func(t *testing.T) {
+		// Setup operator and wait for it to be ready
+		ctx, cancelFnc, kubeClient, err := setupOperator(t)
+		if err != nil {
+			t.Fatalf("Failed to setup operator: %v", err)
+		}
+		defer cancelFnc()
 
-	os.Exit(m.Run())
-}
-
-func TestSoftTainterDeployment(t *testing.T) {
-	kubeClient := GetKubeClient()
+		t.Run("Deploying soft tainter controller", func(t *testing.T) {
 	deschClient := GetDeschedulerClient()
-	ctx, cancelFnc := context.WithCancel(context.TODO())
-	defer cancelFnc()
 
 	// ensure that softtainter additional objects are not there
 	if err := checkSoftTainterObjects(ctx, kubeClient, operatorclient.OperatorNamespace, false); err != nil {
@@ -222,14 +217,10 @@ func TestSoftTainterDeployment(t *testing.T) {
 		}
 	}
 	klog.Infof("All the test softtaints got properly cleaned up")
+		})
 
-}
-
-func TestSoftTainterVAP(t *testing.T) {
-	kubeClient := GetKubeClient()
+		t.Run("Deploying soft tainter controller with Validating Admission Policy", func(t *testing.T) {
 	deschClient := GetDeschedulerClient()
-	ctx, cancelFnc := context.WithCancel(context.TODO())
-	defer cancelFnc()
 
 	// label all the nodes to mock a KubeVirt deployment
 	if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
@@ -339,13 +330,10 @@ func TestSoftTainterVAP(t *testing.T) {
 
 	tryRemovingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &hardTaint)
 	klog.Infof("softtainter SA is not allowed to remove a hard taint")
+		})
 
-}
-
-func TestDescheduling(t *testing.T) {
-	kubeClient := GetKubeClient()
-	ctx := context.Background()
-	testNamespace := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "e2e-" + strings.ToLower(t.Name())}}
+		t.Run("Descheduling a pod", func(t *testing.T) {
+	testNamespace := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "e2e-testdescheduling"}}
 	if _, err := kubeClient.CoreV1().Namespaces().Create(ctx, testNamespace, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Unable to create ns %v", testNamespace.Name)
 	}
@@ -389,7 +377,7 @@ func TestDescheduling(t *testing.T) {
 			},
 		},
 	}
-	defer kubeClient.CoreV1().Namespaces().Delete(ctx, testNamespace.Name, metav1.DeleteOptions{})
+	defer cleanupTestNamespace(t, ctx, kubeClient, testNamespace.Name)
 	if _, err := kubeClient.AppsV1().Deployments(testNamespace.Name).Create(ctx, deploymentObj, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Unable to create a deployment: %v", err)
 	}
@@ -423,6 +411,8 @@ func TestDescheduling(t *testing.T) {
 		}
 		return true
 	}).WithTimeout(3*time.Minute).WithPolling(1*time.Second).Should(o.BeTrue(), "error while waiting for pod")
+		})
+	})
 }
 
 func getPodNames(pods []v1.Pod) []string {
