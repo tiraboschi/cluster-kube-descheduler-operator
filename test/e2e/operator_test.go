@@ -10,7 +10,7 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	o "github.com/onsi/gomega"
 
 	descv1 "github.com/openshift/cluster-kube-descheduler-operator/pkg/apis/descheduler/v1"
 	ssscheme "github.com/openshift/cluster-kube-descheduler-operator/pkg/generated/clientset/versioned/scheme"
@@ -23,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/util/wait"
 	k8sclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -64,7 +63,7 @@ const EXPERIMENTAL_DISABLE_PSI_CHECK = "EXPERIMENTAL_DISABLE_PSI_CHECK"
 
 func TestMain(m *testing.M) {
 	// Register Gomega fail handler for Ginkgo
-	RegisterFailHandler(Fail)
+	o.RegisterFailHandler(Fail)
 
 	if os.Getenv("KUBECONFIG") == "" {
 		klog.Errorf("KUBECONFIG environment variable not set")
@@ -218,20 +217,16 @@ func TestMain(m *testing.M) {
 	}
 
 	// create required resources, e.g. namespace, crd, roles
-	if err := wait.PollImmediate(1*time.Second, 10*time.Second, func() (bool, error) {
+	o.Eventually(func() bool {
 		for _, asset := range assets {
 			klog.Infof("Creating %v", asset.path)
 			if err := asset.readerAndApply(bindata.MustAsset(asset.path)); err != nil {
 				klog.Errorf("Unable to create %v: %v", asset.path, err)
-				return false, nil
+				return false
 			}
 		}
-
-		return true, nil
-	}); err != nil {
-		klog.Errorf("Unable to create Descheduler operator resources: %v", err)
-		os.Exit(1)
-	}
+		return true
+	}).WithTimeout(10*time.Second).WithPolling(1*time.Second).Should(o.BeTrue(), "Unable to create Descheduler operator resources")
 
 	// apply base CR for the operator
 	err := operatorConfigsAppliers[baseConf]()
@@ -556,12 +551,12 @@ func TestDescheduling(t *testing.T) {
 
 	time.Sleep(40 * time.Second)
 
-	if err := wait.PollImmediate(1*time.Second, 3*time.Minute, func() (bool, error) {
+	o.Eventually(func() bool {
 		klog.Infof("Listing pods...")
 		podList, err := kubeClient.CoreV1().Pods(testNamespace.Name).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			klog.Errorf("Unable to get pods: %v", err)
-			return false, nil
+			return false
 		}
 		excludePodNames := getPodNames(podList.Items)
 		sort.Strings(excludePodNames)
@@ -569,12 +564,10 @@ func TestDescheduling(t *testing.T) {
 		// validate no pods were deleted
 		if len(intersectStrings(initialPodNames, excludePodNames)) > 0 {
 			t.Logf("Not every pod was evicted")
-			return false, nil
+			return false
 		}
-		return true, nil
-	}); err != nil {
-		t.Fatalf("error while waiting for pod: %v", err)
-	}
+		return true
+	}).WithTimeout(3*time.Minute).WithPolling(1*time.Second).Should(o.BeTrue(), "error while waiting for pod")
 }
 
 func getPodNames(pods []v1.Pod) []string {
@@ -601,38 +594,36 @@ func intersectStrings(lista, listb []string) []string {
 }
 
 func waitForPodsRunning(ctx context.Context, t *testing.T, clientSet *k8sclient.Clientset, labelMap map[string]string, desireRunningPodNum int, namespace string) {
-	if err := wait.PollImmediate(10*time.Second, 60*time.Second, func() (bool, error) {
+	o.Eventually(func() bool {
 		podList, err := clientSet.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 			LabelSelector: labels.SelectorFromSet(labelMap).String(),
 		})
 		if err != nil {
-			return false, err
+			return false
 		}
 		if len(podList.Items) != desireRunningPodNum {
 			t.Logf("Waiting for %v pods to be running, got %v instead", desireRunningPodNum, len(podList.Items))
-			return false, nil
+			return false
 		}
 		for _, pod := range podList.Items {
 			if pod.Status.Phase != v1.PodRunning {
 				t.Logf("Pod %v not running yet, is %v instead", pod.Name, pod.Status.Phase)
-				return false, nil
+				return false
 			}
 		}
-		return true, nil
-	}); err != nil {
-		t.Fatalf("Error waiting for pods running: %v", err)
-	}
+		return true
+	}).WithTimeout(60*time.Second).WithPolling(10*time.Second).Should(o.BeTrue(), "Error waiting for pods running")
 }
 
 func waitForPodRunningByNamePrefix(ctx context.Context, kubeClient *k8sclient.Clientset, namespace, nameprefix, excludedprefix string) (*v1.Pod, error) {
 	var expectedPod *corev1.Pod
 	// Wait until the expected pod is running
-	if err := wait.PollImmediate(5*time.Second, 1*time.Minute, func() (bool, error) {
+	o.Eventually(func() bool {
 		klog.Infof("Listing pods...")
 		podItems, err := kubeClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			klog.Errorf("Unable to list pods: %v", err)
-			return false, nil
+			return false
 		}
 		for _, pod := range podItems.Items {
 			if !strings.HasPrefix(pod.Name, nameprefix) || (excludedprefix != "" && strings.HasPrefix(pod.Name, excludedprefix)) {
@@ -641,36 +632,32 @@ func waitForPodRunningByNamePrefix(ctx context.Context, kubeClient *k8sclient.Cl
 			klog.Infof("Checking pod: %v, phase: %v, deletionTS: %v\n", pod.Name, pod.Status.Phase, pod.GetDeletionTimestamp())
 			if pod.Status.Phase == corev1.PodRunning && pod.GetDeletionTimestamp() == nil {
 				expectedPod = pod.DeepCopy()
-				return true, nil
+				return true
 			}
 		}
-		return false, nil
-	}); err != nil {
-		return nil, err
-	}
+		return false
+	}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(o.BeTrue())
 	return expectedPod, nil
 }
 
 func waitForPodGoneByNamePrefix(ctx context.Context, kubeClient *k8sclient.Clientset, namespace, nameprefix, excludedprefix string) error {
 	// Wait until a no pods match nameprefix
-	if err := wait.PollImmediate(5*time.Second, 1*time.Minute, func() (bool, error) {
+	o.Eventually(func() bool {
 		klog.Infof("Listing pods...")
 		podItems, err := kubeClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			klog.Errorf("Unable to list pods: %v", err)
-			return false, nil
+			return false
 		}
 		for _, pod := range podItems.Items {
 			if !strings.HasPrefix(pod.Name, nameprefix) || (excludedprefix != "" && strings.HasPrefix(pod.Name, excludedprefix)) {
 				continue
 			}
 			klog.Infof("Found pod: %v, phase: %v, deletionTS: %v\n", pod.Name, pod.Status.Phase, pod.GetDeletionTimestamp())
-			return false, nil
+			return false
 		}
-		return true, nil
-	}); err != nil {
-		return err
-	}
+		return true
+	}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(o.BeTrue())
 	return nil
 }
 
