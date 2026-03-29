@@ -90,7 +90,7 @@ func TestExtended(t *testing.T) {
 			}(ctx, kubeClient)
 
 			// revert to base confing for the operator
-			err = operatorConfigsAppliers["base"](ctx, deschClient)
+			err = operatorConfigsAppliers[baseConf](ctx, deschClient)
 			if err != nil {
 				t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
 			}
