@@ -92,6 +92,73 @@ func operatorConfigsApplier(path string) func(context.Context, *deschclient.Clie
 	}
 }
 
+// setupSoftTainterController sets up the common prerequisites for soft tainter tests.
+// It collects cleanup functions as it progresses and runs them if any step fails.
+// Returns a cleanup function that should be deferred by the caller.
+func setupSoftTainterController(ctx context.Context, t *testing.T, kubeClient *k8sclient.Clientset, deschClient *deschclient.Clientset) func() {
+	var cleanups []func()
+
+	// Helper to run all cleanups in reverse order (LIFO, like defer)
+	runCleanups := func() {
+		for i := len(cleanups) - 1; i >= 0; i-- {
+			cleanups[i]()
+		}
+	}
+
+	// label all the nodes to mock a KubeVirt deployment
+	if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
+		t.Fatalf("Failed applying KubeVirt node label: %v", err)
+	}
+	cleanups = append(cleanups, func() {
+		if err := dropKubeVirtNodeLabel(ctx, kubeClient); err != nil {
+			t.Fatalf("Failed reverting KubeVirt node label: %v", err)
+		}
+	})
+
+	// patch the operator deployment to mock PSI
+	prevDisablePSIcheck, foundDisablePSIcheck := os.LookupEnv(EXPERIMENTAL_DISABLE_PSI_CHECK)
+	if err := mockPSIEnv(ctx, kubeClient); err != nil {
+		runCleanups()
+		t.Fatalf("Failed mocking PSI path enviromental variable to the operator depoyment: %v", err)
+	}
+	cleanups = append(cleanups, func() {
+		if err := unmockPSIEnv(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck); err != nil {
+			t.Fatalf("Failed PSI path enviromental variable: %v", err)
+		}
+	})
+
+	// wait for descheduler operator pod to be running
+	deschOpPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
+	if err != nil {
+		runCleanups()
+		t.Fatalf("Unable to wait for the Descheduler operator pod to run")
+	}
+	klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
+
+	// apply devKubeVirtRelieveAndMigrate CR for the operator
+	if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
+		runCleanups()
+		t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
+	}
+	klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
+	cleanups = append(cleanups, func() {
+		if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
+			t.Fatalf("Failed restoring base profile: %v", err)
+		}
+	})
+
+	// wait for softtainter pod to be running
+	stPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, "")
+	if err != nil {
+		runCleanups()
+		t.Fatalf("Unable to wait for the softtainter pod to run")
+	}
+	klog.Infof("SoftTainter pod running in %v", stPod.Name)
+
+	// Return cleanup function that runs all cleanups in reverse order
+	return runCleanups
+}
+
 // TestExtended runs the operator tests using standard Go testing.
 func TestExtended(t *testing.T) {
 	// Register Gomega with the testing framework for standard Go test mode
@@ -114,52 +181,8 @@ func TestExtended(t *testing.T) {
 			}
 			klog.Infof("No one of the softtainter additonal objects is there")
 
-			// label all the nodes to mock a KubeVirt deployment
-			if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
-				t.Fatalf("Failed applying KubeVirt node label: %v", err)
-			}
-			defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
-				err := dropKubeVirtNodeLabel(ctx, kubeClient)
-				if err != nil {
-					t.Fatalf("Failed reverting KubeVirt node label: %v", err)
-				}
-			}(ctx, kubeClient)
-
-			// patch the operator deployment to mock PSI
-			prevDisablePSIcheck, foundDisablePSIcheck := os.LookupEnv(EXPERIMENTAL_DISABLE_PSI_CHECK)
-			if err := mockPSIEnv(ctx, kubeClient); err != nil {
-				t.Fatalf("Failed mocking PSI path enviromental variable to the operator depoyment: %v", err)
-			}
-			defer func(ctx context.Context, kubeClient *k8sclient.Clientset, prevDisablePSIcheck string, foundDisablePSIcheck bool) {
-				err := unmockPSIEnv(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
-				if err != nil {
-					t.Fatalf("Failed PSI path enviromental variable: %v", err)
-				}
-			}(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
-			// wait for descheduler operator pod to be running
-			deschOpPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
-			if err != nil {
-				t.Fatalf("Unable to wait for the Descheduler operator pod to run")
-			}
-			klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
-
-			// apply devKubeVirtRelieveAndMigrate CR for the operator
-			if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
-				t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
-			}
-			klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
-			defer func() {
-				if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
-					t.Fatalf("Failed restoring base profile: %v", err)
-				}
-			}()
-
-			// wait for softtainter pod to be running
-			stPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, "")
-			if err != nil {
-				t.Fatalf("Unable to wait for the softtainter pod to run")
-			}
-			klog.Infof("SoftTainter pod running in %v", stPod.Name)
+			cleanup := setupSoftTainterController(ctx, t, kubeClient, deschClient)
+			defer cleanup()
 
 			// wait for descheduler pod to be running
 			deschPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
@@ -222,52 +245,8 @@ func TestExtended(t *testing.T) {
 		t.Run("Deploying soft tainter controller with Validating Admission Policy", func(t *testing.T) {
 			deschClient := GetDeschedulerClient()
 
-			// label all the nodes to mock a KubeVirt deployment
-			if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
-				t.Fatalf("Failed applying KubeVirt node label: %v", err)
-			}
-			defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
-				err := dropKubeVirtNodeLabel(ctx, kubeClient)
-				if err != nil {
-					t.Fatalf("Failed reverting KubeVirt node label: %v", err)
-				}
-			}(ctx, kubeClient)
-
-			// patch the operator deployment to mock PSI
-			prevDisablePSIcheck, foundDisablePSIcheck := os.LookupEnv(EXPERIMENTAL_DISABLE_PSI_CHECK)
-			if err := mockPSIEnv(ctx, kubeClient); err != nil {
-				t.Fatalf("Failed mocking PSI path enviromental variable to the operator depoyment: %v", err)
-			}
-			defer func(ctx context.Context, kubeClient *k8sclient.Clientset, prevDisablePSIcheck string, foundDisablePSIcheck bool) {
-				err := unmockPSIEnv(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
-				if err != nil {
-					t.Fatalf("Failed PSI path enviromental variable: %v", err)
-				}
-			}(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
-			// wait for descheduler operator pod to be running
-			deschOpPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
-			if err != nil {
-				t.Fatalf("Unable to wait for the Descheduler operator pod to run")
-			}
-			klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
-
-			// apply devKubeVirtRelieveAndMigrate CR for the operator
-			if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
-				t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
-			}
-			klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
-			defer func() {
-				if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
-					t.Fatalf("Failed restoring base profile: %v", err)
-				}
-			}()
-
-			// wait for softtainter pod to be running
-			stPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, "")
-			if err != nil {
-				t.Fatalf("Unable to wait for the softtainter pod to run")
-			}
-			klog.Infof("SoftTainter pod running in %v", stPod.Name)
+			cleanup := setupSoftTainterController(ctx, t, kubeClient, deschClient)
+			defer cleanup()
 
 			saKubeconfig := os.Getenv("KUBECONFIG")
 			saConfig, err := clientcmd.BuildConfigFromFlags("", saKubeconfig)
