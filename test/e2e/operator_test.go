@@ -106,311 +106,311 @@ func TestExtended(t *testing.T) {
 		defer cancelFnc()
 
 		t.Run("Deploying soft tainter controller", func(t *testing.T) {
-	deschClient := GetDeschedulerClient()
+			deschClient := GetDeschedulerClient()
 
-	// ensure that softtainter additional objects are not there
-	if err := checkSoftTainterObjects(ctx, kubeClient, operatorclient.OperatorNamespace, false); err != nil {
-		t.Fatalf("Unexpected softTainter object: %v", err)
-	}
-	klog.Infof("No one of the softtainter additonal objects is there")
+			// ensure that softtainter additional objects are not there
+			if err := checkSoftTainterObjects(ctx, kubeClient, operatorclient.OperatorNamespace, false); err != nil {
+				t.Fatalf("Unexpected softTainter object: %v", err)
+			}
+			klog.Infof("No one of the softtainter additonal objects is there")
 
-	// label all the nodes to mock a KubeVirt deployment
-	if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
-		t.Fatalf("Failed applying KubeVirt node label: %v", err)
-	}
-	defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
-		err := dropKubeVirtNodeLabel(ctx, kubeClient)
-		if err != nil {
-			t.Fatalf("Failed reverting KubeVirt node label: %v", err)
-		}
-	}(ctx, kubeClient)
+			// label all the nodes to mock a KubeVirt deployment
+			if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
+				t.Fatalf("Failed applying KubeVirt node label: %v", err)
+			}
+			defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
+				err := dropKubeVirtNodeLabel(ctx, kubeClient)
+				if err != nil {
+					t.Fatalf("Failed reverting KubeVirt node label: %v", err)
+				}
+			}(ctx, kubeClient)
 
-	// patch the operator deployment to mock PSI
-	prevDisablePSIcheck, foundDisablePSIcheck := os.LookupEnv(EXPERIMENTAL_DISABLE_PSI_CHECK)
-	if err := mockPSIEnv(ctx, kubeClient); err != nil {
-		t.Fatalf("Failed mocking PSI path enviromental variable to the operator depoyment: %v", err)
-	}
-	defer func(ctx context.Context, kubeClient *k8sclient.Clientset, prevDisablePSIcheck string, foundDisablePSIcheck bool) {
-		err := unmockPSIEnv(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
-		if err != nil {
-			t.Fatalf("Failed PSI path enviromental variable: %v", err)
-		}
-	}(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
-	// wait for descheduler operator pod to be running
-	deschOpPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
-	if err != nil {
-		t.Fatalf("Unable to wait for the Descheduler operator pod to run")
-	}
-	klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
+			// patch the operator deployment to mock PSI
+			prevDisablePSIcheck, foundDisablePSIcheck := os.LookupEnv(EXPERIMENTAL_DISABLE_PSI_CHECK)
+			if err := mockPSIEnv(ctx, kubeClient); err != nil {
+				t.Fatalf("Failed mocking PSI path enviromental variable to the operator depoyment: %v", err)
+			}
+			defer func(ctx context.Context, kubeClient *k8sclient.Clientset, prevDisablePSIcheck string, foundDisablePSIcheck bool) {
+				err := unmockPSIEnv(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
+				if err != nil {
+					t.Fatalf("Failed PSI path enviromental variable: %v", err)
+				}
+			}(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
+			// wait for descheduler operator pod to be running
+			deschOpPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
+			if err != nil {
+				t.Fatalf("Unable to wait for the Descheduler operator pod to run")
+			}
+			klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
 
-	// apply devKubeVirtRelieveAndMigrate CR for the operator
-	if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
-		t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
-	}
-	klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
-	defer func() {
-		if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
-			t.Fatalf("Failed restoring base profile: %v", err)
-		}
-	}()
+			// apply devKubeVirtRelieveAndMigrate CR for the operator
+			if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
+				t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
+			}
+			klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
+			defer func() {
+				if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
+					t.Fatalf("Failed restoring base profile: %v", err)
+				}
+			}()
 
-	// wait for softtainter pod to be running
-	stPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, "")
-	if err != nil {
-		t.Fatalf("Unable to wait for the softtainter pod to run")
-	}
-	klog.Infof("SoftTainter pod running in %v", stPod.Name)
+			// wait for softtainter pod to be running
+			stPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, "")
+			if err != nil {
+				t.Fatalf("Unable to wait for the softtainter pod to run")
+			}
+			klog.Infof("SoftTainter pod running in %v", stPod.Name)
 
-	// wait for descheduler pod to be running
-	deschPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
-	if err != nil {
-		t.Fatalf("Unable to wait for the Descheduler pod to run")
-	}
-	klog.Infof("Descheduler pod running in %v", deschPod.Name)
+			// wait for descheduler pod to be running
+			deschPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
+			if err != nil {
+				t.Fatalf("Unable to wait for the Descheduler pod to run")
+			}
+			klog.Infof("Descheduler pod running in %v", deschPod.Name)
 
-	// ensure that all the softtainter additional objects are there
-	if err = checkSoftTainterObjects(ctx, kubeClient, operatorclient.OperatorNamespace, true); err != nil {
-		t.Fatalf("Missing expected softTainter object: %v", err)
-	}
-	klog.Infof("All the softtainter additonal objects got properly created")
+			// ensure that all the softtainter additional objects are there
+			if err = checkSoftTainterObjects(ctx, kubeClient, operatorclient.OperatorNamespace, true); err != nil {
+				t.Fatalf("Missing expected softTainter object: %v", err)
+			}
+			klog.Infof("All the softtainter additonal objects got properly created")
 
-	// apply test soft taints
-	if err = applySoftTaints(ctx, kubeClient); err != nil {
-		t.Fatalf("Failed applying softtaints: %v", err)
-	}
-	defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
-		err := removeSoftTaints(ctx, kubeClient)
-		if err != nil {
-			t.Fatalf("Failed cleaning softtaints: %v", err)
-		}
-	}(ctx, kubeClient)
+			// apply test soft taints
+			if err = applySoftTaints(ctx, kubeClient); err != nil {
+				t.Fatalf("Failed applying softtaints: %v", err)
+			}
+			defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
+				err := removeSoftTaints(ctx, kubeClient)
+				if err != nil {
+					t.Fatalf("Failed cleaning softtaints: %v", err)
+				}
+			}(ctx, kubeClient)
 
-	// revert to base confing for the operator
-	err = operatorConfigsAppliers["base"](ctx, deschClient)
-	if err != nil {
-		t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
-	}
-	klog.Infof("Descheduler operator is now configured with base profile")
+			// revert to base confing for the operator
+			err = operatorConfigsAppliers["base"](ctx, deschClient)
+			if err != nil {
+				t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
+			}
+			klog.Infof("Descheduler operator is now configured with base profile")
 
-	// wait for softtainter pod to disappear
-	err = waitForPodGoneByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, operatorclient.OperandName+"-operator")
-	if err != nil {
-		t.Fatalf("Unable to wait for the softtainter pod to disappear")
-	}
-	klog.Infof("softtainer pod disappeared")
+			// wait for softtainter pod to disappear
+			err = waitForPodGoneByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, operatorclient.OperandName+"-operator")
+			if err != nil {
+				t.Fatalf("Unable to wait for the softtainter pod to disappear")
+			}
+			klog.Infof("softtainer pod disappeared")
 
-	// ensure that all the softtainter additional objects are gone
-	if err = checkSoftTainterObjects(ctx, kubeClient, operatorclient.OperatorNamespace, false); err != nil {
-		t.Fatalf("Unexpected softTainter object: %v", err)
-	}
-	klog.Infof("No one of the softtainter additonal objects is there")
+			// ensure that all the softtainter additional objects are gone
+			if err = checkSoftTainterObjects(ctx, kubeClient, operatorclient.OperatorNamespace, false); err != nil {
+				t.Fatalf("Unexpected softTainter object: %v", err)
+			}
+			klog.Infof("No one of the softtainter additonal objects is there")
 
-	// ensure that all the test soft taints got cleaned up
-	softTaint := v1.Taint{Key: softtainter.AppropriatelyUtilizedSoftTaintKey, Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectPreferNoSchedule}
-	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: workersLabelSelector})
-	if err != nil {
-		t.Fatalf("Unexpected error fetching nodes: %v", err)
-	}
-	for _, node := range nodes.Items {
-		if taints.TaintExists(node.Spec.Taints, &softTaint) {
-			t.Fatalf("Unexpected leftover softtaint on node %v", node.Name)
-		}
-	}
-	klog.Infof("All the test softtaints got properly cleaned up")
+			// ensure that all the test soft taints got cleaned up
+			softTaint := v1.Taint{Key: softtainter.AppropriatelyUtilizedSoftTaintKey, Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectPreferNoSchedule}
+			nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: workersLabelSelector})
+			if err != nil {
+				t.Fatalf("Unexpected error fetching nodes: %v", err)
+			}
+			for _, node := range nodes.Items {
+				if taints.TaintExists(node.Spec.Taints, &softTaint) {
+					t.Fatalf("Unexpected leftover softtaint on node %v", node.Name)
+				}
+			}
+			klog.Infof("All the test softtaints got properly cleaned up")
 		})
 
 		t.Run("Deploying soft tainter controller with Validating Admission Policy", func(t *testing.T) {
-	deschClient := GetDeschedulerClient()
+			deschClient := GetDeschedulerClient()
 
-	// label all the nodes to mock a KubeVirt deployment
-	if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
-		t.Fatalf("Failed applying KubeVirt node label: %v", err)
-	}
-	defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
-		err := dropKubeVirtNodeLabel(ctx, kubeClient)
-		if err != nil {
-			t.Fatalf("Failed reverting KubeVirt node label: %v", err)
-		}
-	}(ctx, kubeClient)
+			// label all the nodes to mock a KubeVirt deployment
+			if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
+				t.Fatalf("Failed applying KubeVirt node label: %v", err)
+			}
+			defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
+				err := dropKubeVirtNodeLabel(ctx, kubeClient)
+				if err != nil {
+					t.Fatalf("Failed reverting KubeVirt node label: %v", err)
+				}
+			}(ctx, kubeClient)
 
-	// patch the operator deployment to mock PSI
-	prevDisablePSIcheck, foundDisablePSIcheck := os.LookupEnv(EXPERIMENTAL_DISABLE_PSI_CHECK)
-	if err := mockPSIEnv(ctx, kubeClient); err != nil {
-		t.Fatalf("Failed mocking PSI path enviromental variable to the operator depoyment: %v", err)
-	}
-	defer func(ctx context.Context, kubeClient *k8sclient.Clientset, prevDisablePSIcheck string, foundDisablePSIcheck bool) {
-		err := unmockPSIEnv(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
-		if err != nil {
-			t.Fatalf("Failed PSI path enviromental variable: %v", err)
-		}
-	}(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
-	// wait for descheduler operator pod to be running
-	deschOpPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
-	if err != nil {
-		t.Fatalf("Unable to wait for the Descheduler operator pod to run")
-	}
-	klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
+			// patch the operator deployment to mock PSI
+			prevDisablePSIcheck, foundDisablePSIcheck := os.LookupEnv(EXPERIMENTAL_DISABLE_PSI_CHECK)
+			if err := mockPSIEnv(ctx, kubeClient); err != nil {
+				t.Fatalf("Failed mocking PSI path enviromental variable to the operator depoyment: %v", err)
+			}
+			defer func(ctx context.Context, kubeClient *k8sclient.Clientset, prevDisablePSIcheck string, foundDisablePSIcheck bool) {
+				err := unmockPSIEnv(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
+				if err != nil {
+					t.Fatalf("Failed PSI path enviromental variable: %v", err)
+				}
+			}(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck)
+			// wait for descheduler operator pod to be running
+			deschOpPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
+			if err != nil {
+				t.Fatalf("Unable to wait for the Descheduler operator pod to run")
+			}
+			klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
 
-	// apply devKubeVirtRelieveAndMigrate CR for the operator
-	if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
-		t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
-	}
-	klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
-	defer func() {
-		if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
-			t.Fatalf("Failed restoring base profile: %v", err)
-		}
-	}()
+			// apply devKubeVirtRelieveAndMigrate CR for the operator
+			if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
+				t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
+			}
+			klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
+			defer func() {
+				if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
+					t.Fatalf("Failed restoring base profile: %v", err)
+				}
+			}()
 
-	// wait for softtainter pod to be running
-	stPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, "")
-	if err != nil {
-		t.Fatalf("Unable to wait for the softtainter pod to run")
-	}
-	klog.Infof("SoftTainter pod running in %v", stPod.Name)
+			// wait for softtainter pod to be running
+			stPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, "")
+			if err != nil {
+				t.Fatalf("Unable to wait for the softtainter pod to run")
+			}
+			klog.Infof("SoftTainter pod running in %v", stPod.Name)
 
-	saKubeconfig := os.Getenv("KUBECONFIG")
-	saConfig, err := clientcmd.BuildConfigFromFlags("", saKubeconfig)
-	if err != nil {
-		t.Fatalf("Unable to build config: %v", err)
-	}
-	saConfig.Impersonate = rest.ImpersonationConfig{
-		UserName: fmt.Sprintf("system:serviceaccount:%v:%v", operatorclient.OperatorNamespace, softTainterServiceAccountName),
-	}
+			saKubeconfig := os.Getenv("KUBECONFIG")
+			saConfig, err := clientcmd.BuildConfigFromFlags("", saKubeconfig)
+			if err != nil {
+				t.Fatalf("Unable to build config: %v", err)
+			}
+			saConfig.Impersonate = rest.ImpersonationConfig{
+				UserName: fmt.Sprintf("system:serviceaccount:%v:%v", operatorclient.OperatorNamespace, softTainterServiceAccountName),
+			}
 
-	stClientset, err := k8sclient.NewForConfig(saConfig)
-	if err != nil {
-		t.Fatalf("Unable to build client: %v", err)
-	}
+			stClientset, err := k8sclient.NewForConfig(saConfig)
+			if err != nil {
+				t.Fatalf("Unable to build client: %v", err)
+			}
 
-	nodes, err := stClientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: workersLabelSelector})
-	if err != nil {
-		t.Fatalf("Unable to fetch nodes: %v", err)
-	}
-	if len(nodes.Items) < 1 {
-		t.Fatalf("Unable to find a test node: %v", err)
-	}
-	tNode := &nodes.Items[0]
+			nodes, err := stClientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: workersLabelSelector})
+			if err != nil {
+				t.Fatalf("Unable to fetch nodes: %v", err)
+			}
+			if len(nodes.Items) < 1 {
+				t.Fatalf("Unable to find a test node: %v", err)
+			}
+			tNode := &nodes.Items[0]
 
-	defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
-		err := removeSoftTaints(ctx, kubeClient)
-		if err != nil {
-			t.Fatalf("Failed cleaning softtaints: %v", err)
-		}
-	}(ctx, kubeClient)
+			defer func(ctx context.Context, kubeClient *k8sclient.Clientset) {
+				err := removeSoftTaints(ctx, kubeClient)
+				if err != nil {
+					t.Fatalf("Failed cleaning softtaints: %v", err)
+				}
+			}(ctx, kubeClient)
 
-	softTaint := v1.Taint{Key: softtainter.AppropriatelyUtilizedSoftTaintKey, Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectPreferNoSchedule}
-	tryAddingTaintWithExpectedSuccess(ctx, t, stClientset, tNode, &softTaint)
-	klog.Infof("softtainter SA is allowed to apply a softtaint with the right key prefix")
+			softTaint := v1.Taint{Key: softtainter.AppropriatelyUtilizedSoftTaintKey, Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectPreferNoSchedule}
+			tryAddingTaintWithExpectedSuccess(ctx, t, stClientset, tNode, &softTaint)
+			klog.Infof("softtainter SA is allowed to apply a softtaint with the right key prefix")
 
-	tryRemovingTaintWithExpectedSuccess(ctx, t, stClientset, tNode, &softTaint)
-	klog.Infof("softtainter SA is allowed to delete a softtaint with the right key prefix")
+			tryRemovingTaintWithExpectedSuccess(ctx, t, stClientset, tNode, &softTaint)
+			klog.Infof("softtainter SA is allowed to delete a softtaint with the right key prefix")
 
-	badSoftTaint := v1.Taint{Key: "wrongKey", Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectPreferNoSchedule}
-	tryAddingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &badSoftTaint)
-	klog.Infof("softtainter SA is not allowed to apply a softtaint with a wrong key prefix")
+			badSoftTaint := v1.Taint{Key: "wrongKey", Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectPreferNoSchedule}
+			tryAddingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &badSoftTaint)
+			klog.Infof("softtainter SA is not allowed to apply a softtaint with a wrong key prefix")
 
-	hardTaint := v1.Taint{Key: softtainter.AppropriatelyUtilizedSoftTaintKey, Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectNoSchedule}
-	tryAddingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &hardTaint)
-	klog.Infof("softtainter SA is not allowed to apply hard taints")
+			hardTaint := v1.Taint{Key: softtainter.AppropriatelyUtilizedSoftTaintKey, Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectNoSchedule}
+			tryAddingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &hardTaint)
+			klog.Infof("softtainter SA is not allowed to apply hard taints")
 
-	// apply wrong softtaint and hard taint as test executor
-	unremovableTaints := []*v1.Taint{&badSoftTaint, &hardTaint}
-	for _, taint := range unremovableTaints {
-		tryAddingTaintWithExpectedSuccess(ctx, t, kubeClient, tNode, taint)
-	}
-	defer func(ctx context.Context, kubeClient *k8sclient.Clientset, node *v1.Node, taints []*v1.Taint) {
-		for _, taint := range taints {
-			tryRemovingTaintWithExpectedSuccess(ctx, t, kubeClient, tNode, taint)
-		}
-	}(ctx, kubeClient, tNode, unremovableTaints)
+			// apply wrong softtaint and hard taint as test executor
+			unremovableTaints := []*v1.Taint{&badSoftTaint, &hardTaint}
+			for _, taint := range unremovableTaints {
+				tryAddingTaintWithExpectedSuccess(ctx, t, kubeClient, tNode, taint)
+			}
+			defer func(ctx context.Context, kubeClient *k8sclient.Clientset, node *v1.Node, taints []*v1.Taint) {
+				for _, taint := range taints {
+					tryRemovingTaintWithExpectedSuccess(ctx, t, kubeClient, tNode, taint)
+				}
+			}(ctx, kubeClient, tNode, unremovableTaints)
 
-	tryRemovingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &badSoftTaint)
-	klog.Infof("softtainter SA is not allowed to remove a softtaint with a wrong key prefix")
+			tryRemovingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &badSoftTaint)
+			klog.Infof("softtainter SA is not allowed to remove a softtaint with a wrong key prefix")
 
-	tryRemovingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &hardTaint)
-	klog.Infof("softtainter SA is not allowed to remove a hard taint")
+			tryRemovingTaintWithExpectedFailure(ctx, t, stClientset, tNode, &hardTaint)
+			klog.Infof("softtainter SA is not allowed to remove a hard taint")
 		})
 
 		t.Run("Descheduling a pod", func(t *testing.T) {
-	testNamespace := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "e2e-testdescheduling"}}
-	if _, err := kubeClient.CoreV1().Namespaces().Create(ctx, testNamespace, metav1.CreateOptions{}); err != nil {
-		t.Fatalf("Unable to create ns %v", testNamespace.Name)
-	}
-	deploymentObj := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: testNamespace.Name,
-			Name:      "test-descheduler-operator-pod",
-			Labels:    map[string]string{"app": "test-descheduler-operator-pod"},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Replicas: utilpointer.Int32(1),
-			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{"app": "test-descheduler-operator-pod"},
-			},
-			Template: v1.PodTemplateSpec{
+			testNamespace := &v1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "e2e-testdescheduling"}}
+			if _, err := kubeClient.CoreV1().Namespaces().Create(ctx, testNamespace, metav1.CreateOptions{}); err != nil {
+				t.Fatalf("Unable to create ns %v", testNamespace.Name)
+			}
+			deploymentObj := &appsv1.Deployment{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": "test-descheduler-operator-pod"},
+					Namespace: testNamespace.Name,
+					Name:      "test-descheduler-operator-pod",
+					Labels:    map[string]string{"app": "test-descheduler-operator-pod"},
 				},
-				Spec: corev1.PodSpec{
-					SecurityContext: &corev1.PodSecurityContext{
-						RunAsNonRoot: utilpointer.BoolPtr(true),
-						SeccompProfile: &corev1.SeccompProfile{
-							Type: corev1.SeccompProfileTypeRuntimeDefault,
-						},
+				Spec: appsv1.DeploymentSpec{
+					Replicas: utilpointer.Int32(1),
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{"app": "test-descheduler-operator-pod"},
 					},
-					Containers: []corev1.Container{{
-						SecurityContext: &corev1.SecurityContext{
-							AllowPrivilegeEscalation: utilpointer.BoolPtr(false),
-							Capabilities: &corev1.Capabilities{
-								Drop: []corev1.Capability{
-									"ALL",
+					Template: v1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Labels: map[string]string{"app": "test-descheduler-operator-pod"},
+						},
+						Spec: corev1.PodSpec{
+							SecurityContext: &corev1.PodSecurityContext{
+								RunAsNonRoot: utilpointer.BoolPtr(true),
+								SeccompProfile: &corev1.SeccompProfile{
+									Type: corev1.SeccompProfileTypeRuntimeDefault,
 								},
 							},
+							Containers: []corev1.Container{{
+								SecurityContext: &corev1.SecurityContext{
+									AllowPrivilegeEscalation: utilpointer.BoolPtr(false),
+									Capabilities: &corev1.Capabilities{
+										Drop: []corev1.Capability{
+											"ALL",
+										},
+									},
+								},
+								Name:            "pause",
+								ImagePullPolicy: "Always",
+								Image:           "registry.k8s.io/pause",
+								Ports:           []corev1.ContainerPort{{ContainerPort: 80}},
+							}},
 						},
-						Name:            "pause",
-						ImagePullPolicy: "Always",
-						Image:           "registry.k8s.io/pause",
-						Ports:           []corev1.ContainerPort{{ContainerPort: 80}},
-					}},
+					},
 				},
-			},
-		},
-	}
-	defer cleanupTestNamespace(t, ctx, kubeClient, testNamespace.Name)
-	if _, err := kubeClient.AppsV1().Deployments(testNamespace.Name).Create(ctx, deploymentObj, metav1.CreateOptions{}); err != nil {
-		t.Fatalf("Unable to create a deployment: %v", err)
-	}
-	defer kubeClient.AppsV1().Deployments(testNamespace.Name).Delete(ctx, deploymentObj.Name, metav1.DeleteOptions{})
+			}
+			defer cleanupTestNamespace(t, ctx, kubeClient, testNamespace.Name)
+			if _, err := kubeClient.AppsV1().Deployments(testNamespace.Name).Create(ctx, deploymentObj, metav1.CreateOptions{}); err != nil {
+				t.Fatalf("Unable to create a deployment: %v", err)
+			}
+			defer kubeClient.AppsV1().Deployments(testNamespace.Name).Delete(ctx, deploymentObj.Name, metav1.DeleteOptions{})
 
-	waitForPodsRunning(ctx, t, kubeClient, map[string]string{"app": "test-descheduler-operator-pod"}, 1, testNamespace.Name)
+			waitForPodsRunning(ctx, t, kubeClient, map[string]string{"app": "test-descheduler-operator-pod"}, 1, testNamespace.Name)
 
-	podList, err := kubeClient.CoreV1().Pods(testNamespace.Name).List(ctx, metav1.ListOptions{})
-	initialPodNames := getPodNames(podList.Items)
-	t.Logf("Initial test pods: %v", initialPodNames)
-	if err != nil {
-		t.Fatalf("Unable to get pods: %v", err)
-	}
+			podList, err := kubeClient.CoreV1().Pods(testNamespace.Name).List(ctx, metav1.ListOptions{})
+			initialPodNames := getPodNames(podList.Items)
+			t.Logf("Initial test pods: %v", initialPodNames)
+			if err != nil {
+				t.Fatalf("Unable to get pods: %v", err)
+			}
 
-	time.Sleep(40 * time.Second)
+			time.Sleep(40 * time.Second)
 
-	o.Eventually(func() bool {
-		klog.Infof("Listing pods...")
-		podList, err := kubeClient.CoreV1().Pods(testNamespace.Name).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			klog.Errorf("Unable to get pods: %v", err)
-			return false
-		}
-		excludePodNames := getPodNames(podList.Items)
-		sort.Strings(excludePodNames)
-		t.Logf("Existing pods: %v", excludePodNames)
-		// validate no pods were deleted
-		if len(intersectStrings(initialPodNames, excludePodNames)) > 0 {
-			t.Logf("Not every pod was evicted")
-			return false
-		}
-		return true
-	}).WithTimeout(3*time.Minute).WithPolling(1*time.Second).Should(o.BeTrue(), "error while waiting for pod")
+			o.Eventually(func() bool {
+				klog.Infof("Listing pods...")
+				podList, err := kubeClient.CoreV1().Pods(testNamespace.Name).List(ctx, metav1.ListOptions{})
+				if err != nil {
+					klog.Errorf("Unable to get pods: %v", err)
+					return false
+				}
+				excludePodNames := getPodNames(podList.Items)
+				sort.Strings(excludePodNames)
+				t.Logf("Existing pods: %v", excludePodNames)
+				// validate no pods were deleted
+				if len(intersectStrings(initialPodNames, excludePodNames)) > 0 {
+					t.Logf("Not every pod was evicted")
+					return false
+				}
+				return true
+			}).WithTimeout(3*time.Minute).WithPolling(1*time.Second).Should(o.BeTrue(), "error while waiting for pod")
 		})
 	})
 }
