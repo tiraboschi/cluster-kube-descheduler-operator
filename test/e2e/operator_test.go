@@ -11,9 +11,6 @@ import (
 
 	o "github.com/onsi/gomega"
 
-	descv1 "github.com/openshift/cluster-kube-descheduler-operator/pkg/apis/descheduler/v1"
-	deschclient "github.com/openshift/cluster-kube-descheduler-operator/pkg/generated/clientset/versioned"
-	ssscheme "github.com/openshift/cluster-kube-descheduler-operator/pkg/generated/clientset/versioned/scheme"
 	"github.com/openshift/cluster-kube-descheduler-operator/pkg/softtainter"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -31,15 +28,9 @@ import (
 	utilpointer "k8s.io/utils/pointer"
 
 	"github.com/openshift/cluster-kube-descheduler-operator/pkg/operator/operatorclient"
-	"github.com/openshift/cluster-kube-descheduler-operator/test/e2e/bindata"
 )
 
 const (
-	baseConf                                           = "base"
-	kubeVirtRelieveAndMigrateConf                      = "devKubeVirtRelieveAndMigrate"
-	kubeVirtLabelKey                                   = "kubevirt.io/schedulable"
-	kubeVirtLabelValue                                 = "true"
-	workersLabelSelector                               = "node-role.kubernetes.io/worker="
 	softTainterDeploymentName                          = "softtainter"
 	softTainterServiceAccountName                      = "openshift-descheduler-softtainter"
 	softTainterClusterRoleName                         = "openshift-descheduler-softtainter"
@@ -48,116 +39,6 @@ const (
 	softTainterValidatingAdmissionPolicyName           = "openshift-descheduler-softtainter-vap"
 	softTainterValidatingAdmissionPolicyBindingName    = "openshift-descheduler-softtainter-vap-binding"
 )
-
-var operatorConfigsAppliers = map[string]func(context.Context, *deschclient.Clientset) error{
-	baseConf:                      operatorConfigsApplier("assets/07_descheduler-operator.cr.yaml"),
-	kubeVirtRelieveAndMigrateConf: operatorConfigsApplier("assets/07_descheduler-operator.cr.devKubeVirtRelieveAndMigrate.yaml"),
-}
-
-const EXPERIMENTAL_DISABLE_PSI_CHECK = "EXPERIMENTAL_DISABLE_PSI_CHECK"
-
-func operatorConfigsApplier(path string) func(context.Context, *deschclient.Clientset) error {
-	return func(ctx context.Context, deschClient *deschclient.Clientset) error {
-		requiredObj, err := runtime.Decode(ssscheme.Codecs.UniversalDecoder(descv1.SchemeGroupVersion), bindata.MustAsset(path))
-		if err != nil {
-			klog.Errorf("Unable to decode %v: %v", path, err)
-			return err
-		}
-		requiredDesch := requiredObj.(*descv1.KubeDescheduler)
-		existingDesch, err := deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Get(ctx, requiredDesch.Name, metav1.GetOptions{})
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Create(ctx, requiredDesch, metav1.CreateOptions{})
-				return err
-			} else {
-				return err
-			}
-		}
-		requiredDesch.Spec.DeepCopyInto(&existingDesch.Spec)
-		existingDesch.ObjectMeta.Annotations = requiredDesch.ObjectMeta.Annotations
-		existingDesch.ObjectMeta.Labels = requiredDesch.ObjectMeta.Labels
-		_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Update(ctx, existingDesch, metav1.UpdateOptions{})
-		// retry once on conflicts
-		if apierrors.IsConflict(err) {
-			existingDesch, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Get(ctx, requiredDesch.Name, metav1.GetOptions{})
-			if err != nil {
-				return err
-			}
-			requiredDesch.Spec.DeepCopyInto(&existingDesch.Spec)
-			existingDesch.ObjectMeta.Annotations = requiredDesch.ObjectMeta.Annotations
-			existingDesch.ObjectMeta.Labels = requiredDesch.ObjectMeta.Labels
-			_, err = deschClient.KubedeschedulersV1().KubeDeschedulers(requiredDesch.Namespace).Update(ctx, existingDesch, metav1.UpdateOptions{})
-		}
-		return err
-	}
-}
-
-// setupSoftTainterController sets up the common prerequisites for soft tainter tests.
-// It collects cleanup functions as it progresses and runs them if any step fails.
-// Returns a cleanup function that should be deferred by the caller.
-func setupSoftTainterController(ctx context.Context, t *testing.T, kubeClient *k8sclient.Clientset, deschClient *deschclient.Clientset) func() {
-	var cleanups []func()
-
-	// Helper to run all cleanups in reverse order (LIFO, like defer)
-	runCleanups := func() {
-		for i := len(cleanups) - 1; i >= 0; i-- {
-			cleanups[i]()
-		}
-	}
-
-	// label all the nodes to mock a KubeVirt deployment
-	if err := applyKubeVirtNodeLabel(ctx, kubeClient); err != nil {
-		t.Fatalf("Failed applying KubeVirt node label: %v", err)
-	}
-	cleanups = append(cleanups, func() {
-		if err := dropKubeVirtNodeLabel(ctx, kubeClient); err != nil {
-			t.Fatalf("Failed reverting KubeVirt node label: %v", err)
-		}
-	})
-
-	// patch the operator deployment to mock PSI
-	prevDisablePSIcheck, foundDisablePSIcheck := os.LookupEnv(EXPERIMENTAL_DISABLE_PSI_CHECK)
-	if err := mockPSIEnv(ctx, kubeClient); err != nil {
-		runCleanups()
-		t.Fatalf("Failed mocking PSI path enviromental variable to the operator depoyment: %v", err)
-	}
-	cleanups = append(cleanups, func() {
-		if err := unmockPSIEnv(ctx, kubeClient, prevDisablePSIcheck, foundDisablePSIcheck); err != nil {
-			t.Fatalf("Failed PSI path enviromental variable: %v", err)
-		}
-	})
-
-	// wait for descheduler operator pod to be running
-	deschOpPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.OperandName, operatorclient.OperandName+"-operator")
-	if err != nil {
-		runCleanups()
-		t.Fatalf("Unable to wait for the Descheduler operator pod to run")
-	}
-	klog.Infof("Descheduler pod running in %v", deschOpPod.Name)
-
-	// apply devKubeVirtRelieveAndMigrate CR for the operator
-	if err := operatorConfigsAppliers[kubeVirtRelieveAndMigrateConf](ctx, deschClient); err != nil {
-		runCleanups()
-		t.Fatalf("Unable to apply a CR for Descheduler operator: %v", err)
-	}
-	klog.Infof("Descheduler operator is now configured with devKubeVirtRelieveAndMigrate profile")
-	cleanups = append(cleanups, func() {
-		if err := operatorConfigsAppliers[baseConf](ctx, deschClient); err != nil {
-			t.Fatalf("Failed restoring base profile: %v", err)
-		}
-	})
-
-	// wait for softtainter pod to be running
-	stPod, err := waitForPodRunningByNamePrefix(ctx, kubeClient, operatorclient.OperatorNamespace, operatorclient.SoftTainterOperandName, "")
-	if err != nil {
-		runCleanups()
-		t.Fatalf("Unable to wait for the softtainter pod to run")
-	}
-	klog.Infof("SoftTainter pod running in %v", stPod.Name)
-
-	// Return cleanup function that runs all cleanups in reverse order
-	return runCleanups
-}
 
 // TestExtended runs the operator tests using standard Go testing.
 func TestExtended(t *testing.T) {
@@ -439,31 +320,6 @@ func waitForPodsRunning(ctx context.Context, t *testing.T, clientSet *k8sclient.
 	}).WithTimeout(60*time.Second).WithPolling(10*time.Second).Should(o.BeTrue(), "Error waiting for pods running")
 }
 
-func waitForPodRunningByNamePrefix(ctx context.Context, kubeClient *k8sclient.Clientset, namespace, nameprefix, excludedprefix string) (*v1.Pod, error) {
-	var expectedPod *corev1.Pod
-	// Wait until the expected pod is running
-	o.Eventually(func() bool {
-		klog.Infof("Listing pods...")
-		podItems, err := kubeClient.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
-		if err != nil {
-			klog.Errorf("Unable to list pods: %v", err)
-			return false
-		}
-		for _, pod := range podItems.Items {
-			if !strings.HasPrefix(pod.Name, nameprefix) || (excludedprefix != "" && strings.HasPrefix(pod.Name, excludedprefix)) {
-				continue
-			}
-			klog.Infof("Checking pod: %v, phase: %v, deletionTS: %v\n", pod.Name, pod.Status.Phase, pod.GetDeletionTimestamp())
-			if pod.Status.Phase == corev1.PodRunning && pod.GetDeletionTimestamp() == nil {
-				expectedPod = pod.DeepCopy()
-				return true
-			}
-		}
-		return false
-	}).WithTimeout(1 * time.Minute).WithPolling(5 * time.Second).Should(o.BeTrue())
-	return expectedPod, nil
-}
-
 func waitForPodGoneByNamePrefix(ctx context.Context, kubeClient *k8sclient.Clientset, namespace, nameprefix, excludedprefix string) error {
 	// Wait until a no pods match nameprefix
 	o.Eventually(func() bool {
@@ -546,40 +402,6 @@ func checkExpected(expected bool, obj runtime.Object, err error) error {
 	}
 }
 
-func applyKubeVirtNodeLabel(ctx context.Context, kubeClient *k8sclient.Clientset) error {
-	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: workersLabelSelector})
-	if err != nil {
-		return err
-	}
-	for _, node := range nodes.Items {
-		if node.Labels[kubeVirtLabelKey] != kubeVirtLabelValue {
-			node.Labels[kubeVirtLabelKey] = kubeVirtLabelValue
-			uerr := updateNodeAndRetryOnConflicts(ctx, kubeClient, &node, metav1.UpdateOptions{})
-			if uerr != nil {
-				return uerr
-			}
-		}
-	}
-	return nil
-}
-
-func dropKubeVirtNodeLabel(ctx context.Context, kubeClient *k8sclient.Clientset) error {
-	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: workersLabelSelector})
-	if err != nil {
-		return err
-	}
-	for _, node := range nodes.Items {
-		if node.Labels[kubeVirtLabelKey] == kubeVirtLabelValue {
-			delete(node.Labels, kubeVirtLabelKey)
-			uerr := updateNodeAndRetryOnConflicts(ctx, kubeClient, &node, metav1.UpdateOptions{})
-			if uerr != nil {
-				return uerr
-			}
-		}
-	}
-	return nil
-}
-
 func applySoftTaints(ctx context.Context, kubeClient *k8sclient.Clientset) error {
 	softTaint := v1.Taint{Key: softtainter.AppropriatelyUtilizedSoftTaintKey, Value: softtainter.AppropriatelyUtilizedSoftTaintValue, Effect: v1.TaintEffectPreferNoSchedule}
 	nodes, err := kubeClient.CoreV1().Nodes().List(ctx, metav1.ListOptions{LabelSelector: workersLabelSelector})
@@ -618,48 +440,6 @@ func removeSoftTaints(ctx context.Context, kubeClient *k8sclient.Clientset) erro
 				return uerr
 			}
 		}
-	}
-	return nil
-}
-
-func updateNodeAndRetryOnConflicts(ctx context.Context, kubeClient *k8sclient.Clientset, node *corev1.Node, opts metav1.UpdateOptions) error {
-	uNode, uerr := kubeClient.CoreV1().Nodes().Update(ctx, node, opts)
-	if uerr != nil {
-		if apierrors.IsConflict(uerr) {
-			if uNode.Name == "" {
-				uNode, uerr = kubeClient.CoreV1().Nodes().Get(ctx, node.Name, metav1.GetOptions{})
-				if uerr != nil {
-					return uerr
-				}
-			}
-			node.Spec.DeepCopyInto(&uNode.Spec)
-			uNode.ObjectMeta.Labels = node.ObjectMeta.Labels
-			uNode.ObjectMeta.Annotations = node.ObjectMeta.Annotations
-			_, err := kubeClient.CoreV1().Nodes().Update(ctx, uNode, opts)
-			return err
-		}
-		return uerr
-	}
-	return nil
-}
-
-func updateDeploymentAndRetryOnConflicts(ctx context.Context, kubeClient *k8sclient.Clientset, deployment *appsv1.Deployment, opts metav1.UpdateOptions) error {
-	uDeployment, uerr := kubeClient.AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, opts)
-	if uerr != nil {
-		if apierrors.IsConflict(uerr) {
-			if uDeployment.Name == "" {
-				uDeployment, uerr = kubeClient.AppsV1().Deployments(uDeployment.Namespace).Get(ctx, uDeployment.Name, metav1.GetOptions{})
-				if uerr != nil {
-					return uerr
-				}
-			}
-			deployment.Spec.DeepCopyInto(&uDeployment.Spec)
-			uDeployment.ObjectMeta.Labels = deployment.ObjectMeta.Labels
-			uDeployment.ObjectMeta.Annotations = deployment.ObjectMeta.Annotations
-			_, err := kubeClient.AppsV1().Deployments(deployment.Namespace).Update(ctx, deployment, opts)
-			return err
-		}
-		return uerr
 	}
 	return nil
 }
@@ -724,41 +504,4 @@ func tryRemovingTaintWithExpectedSuccess(ctx context.Context, t *testing.T, clie
 
 func tryRemovingTaintWithExpectedFailure(ctx context.Context, t *testing.T, clientSet *k8sclient.Clientset, node *corev1.Node, taint *corev1.Taint) {
 	tryUpdatingTaintWithExpectation(ctx, t, clientSet, node, taint, false, false)
-}
-
-func mockPSIEnv(ctx context.Context, kubeClient *k8sclient.Clientset) error {
-	operatorDeployment, err := kubeClient.AppsV1().Deployments(operatorclient.OperatorNamespace).Get(ctx, operatorclient.OperandName+"-operator", metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	operatorDeployment.Spec.Template.Spec.Containers[0].Env = append(
-		operatorDeployment.Spec.Template.Spec.Containers[0].Env,
-		v1.EnvVar{
-			Name:  EXPERIMENTAL_DISABLE_PSI_CHECK,
-			Value: "true",
-		})
-	return updateDeploymentAndRetryOnConflicts(ctx, kubeClient, operatorDeployment, metav1.UpdateOptions{})
-}
-
-func unmockPSIEnv(ctx context.Context, kubeClient *k8sclient.Clientset, prevDisablePSIcheck string, foundDisablePSIcheck bool) error {
-	operatorDeployment, err := kubeClient.AppsV1().Deployments(operatorclient.OperatorNamespace).Get(ctx, operatorclient.OperandName+"-operator", metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	var envVars []v1.EnvVar
-	for _, e := range operatorDeployment.Spec.Template.Spec.Containers[0].Env {
-		if e.Name != EXPERIMENTAL_DISABLE_PSI_CHECK {
-			envVars = append(envVars, e)
-		}
-	}
-	if foundDisablePSIcheck {
-		operatorDeployment.Spec.Template.Spec.Containers[0].Env = append(
-			envVars,
-			v1.EnvVar{
-				Name:  EXPERIMENTAL_DISABLE_PSI_CHECK,
-				Value: prevDisablePSIcheck,
-			})
-	}
-	operatorDeployment.Spec.Template.Spec.Containers[0].Env = envVars
-	return updateDeploymentAndRetryOnConflicts(ctx, kubeClient, operatorDeployment, metav1.UpdateOptions{})
 }
