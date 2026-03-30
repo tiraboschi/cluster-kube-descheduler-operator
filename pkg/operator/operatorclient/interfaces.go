@@ -27,6 +27,8 @@ const OperandName = "descheduler"
 const SoftTainterOperandName = "softtainter"
 const OpenshiftClusterMonitoringLabelKey = "openshift.io/cluster-monitoring"
 const OpenshiftClusterMonitoringLabelValue = "true"
+const PromNamespace = "openshift-monitoring"
+const PromRouteName = "prometheus-k8s"
 
 type DeschedulerClient struct {
 	Ctx            context.Context
