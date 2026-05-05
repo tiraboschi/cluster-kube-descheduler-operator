@@ -357,6 +357,14 @@ spec:
                 - patch
                 - delete
                 - deletecollection
+            - apiGroups:
+                - kubevirt.io
+              resources:
+                - virtualmachineinstances
+              verbs:
+                - get
+                - list
+                - watch
       deployments:
         - name: descheduler-operator
           spec:
