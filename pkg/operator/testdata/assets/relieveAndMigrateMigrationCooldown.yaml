@@ -20,12 +20,12 @@ profiles:
         - openshift-kube-scheduler
       metricsUtilization:
         prometheus:
-          query: descheduler:combined_utilization_and_pressure:avg1m
+          query: descheduler:node:linear_amplified_ideal_point_positive_distance:k3:avg1m
         source: Prometheus
       targetThresholds:
         MetricResource: 10
       thresholds:
-        MetricResource: 10
+        MetricResource: 0
       useDeviationThresholds: true
     name: LowNodeUtilization
   - args:
@@ -33,7 +33,10 @@ profiles:
       noEvictionPolicy: Mandatory
       podProtections: {}
     name: DefaultEvictor
-  - args: {}
+  - args:
+      maxMigrationCooldown: 6h0m0s
+      migrationCooldown: 15m0s
+      migrationHistoryWindow: 24h0m0s
     name: KubevirtMigrationAware
   plugins:
     balance:
