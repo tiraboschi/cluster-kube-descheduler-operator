@@ -38,6 +38,10 @@ require (
 
 replace k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250910181357-589584f1c912
 
+// TODO: remove me,
+// only to get KubevirtMigrationAware plugin for the softtainter
+replace sigs.k8s.io/descheduler => github.com/tiraboschi/descheduler v0.0.0-20260505074057-a07081eac80d
+
 require (
 	cel.dev/expr v0.25.1 // indirect
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
